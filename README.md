@@ -14,7 +14,6 @@ gearcraft/
 ├── Cargo.toml                 # workspace
 ├── PROTOCOL.md                # IPC protocol
 ├── ROADMAP.md
-├── HANDOFF.md
 ├── crates/
 │   ├── gearcraft-core/
 │   ├── gearcraft-daemon/
