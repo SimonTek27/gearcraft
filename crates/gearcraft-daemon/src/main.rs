@@ -29,6 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("GearCraft daemon starting…");
     info!("config dir: {}", config::config_dir().display());
 
+    if usb::is_scan_only() {
+        usb::print_scan_report();
+        return Ok(());
+    }
+
     if usb::is_dry_run() {
         info!("Dry-run mode (GEARCRAFT_DRY=1)");
     }

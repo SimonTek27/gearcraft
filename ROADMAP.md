@@ -43,9 +43,10 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 ## Phase 4 — Hardware completeness
 
-- [ ] Live testing matrix (mice / keyboards / headsets) with `--features hidapi`
+- [x] Hardware test harness (`docs/HARDWARE.md`, `packaging/hw-test.sh`, `GEARCRAFT_SCAN_ONLY`)
+- [ ] Live validation matrix filled on real mice / keyboards / headsets
 - [ ] Per-key / multi-zone keyboard RGB from open captures
-- [ ] Live battery HID read + charge state
+- [x] Live battery HID read path (Arctis write+read; validate on hardware)
 - [ ] Hotplug via udev monitor (replace periodic rescan)
 
 ## Phase 5 — More brands (plugin model)
