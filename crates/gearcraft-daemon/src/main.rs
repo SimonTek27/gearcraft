@@ -2,6 +2,7 @@
 
 mod addons;
 mod chatmix_pw;
+mod config;
 mod ipc;
 mod macros_store;
 mod uinput_macros;
@@ -13,7 +14,6 @@ use tokio::sync::RwLock;
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 
-use gearcraft_core::ChatMixState;
 use ipc::{run_server, DeviceRegistry, SharedState};
 use macros_store::MacroStore;
 
@@ -27,20 +27,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .init();
 
     info!("GearCraft daemon starting…");
+    info!("config dir: {}", config::config_dir().display());
+
     if usb::is_dry_run() {
         info!("Dry-run mode (GEARCRAFT_DRY=1)");
     }
 
+    let settings = config::load_settings();
     let backend = chatmix_pw::detect_sinks().await;
     info!("ChatMix audio: {} – {}", backend.backend, backend.message);
+    info!(
+        "ChatMix balance from config: {} (game {}% / chat {}%)",
+        settings.chatmix.balance, settings.chatmix.game_volume, settings.chatmix.chat_volume
+    );
+
+    // Re-apply last ChatMix volumes if sinks are ready
+    if backend.available {
+        let g = settings.chatmix.game_volume;
+        let c = settings.chatmix.chat_volume;
+        match chatmix_pw::apply_volumes(g, c).await {
+            Ok(_) => info!("restored ChatMix volumes from config"),
+            Err(e) => info!("ChatMix restore skipped: {e}"),
+        }
+    }
 
     let mut registry = DeviceRegistry::new();
     registry.refresh();
 
+    let macros = MacroStore::load_or_defaults();
+    info!("macros in store: {}", macros.list().len());
+
     let state = SharedState {
         registry: Arc::new(RwLock::new(registry)),
-        macros: Arc::new(RwLock::new(MacroStore::new_with_defaults())),
-        chatmix: Arc::new(RwLock::new(ChatMixState::default())),
+        macros: Arc::new(RwLock::new(macros)),
+        chatmix: Arc::new(RwLock::new(settings.chatmix)),
     };
 
     let reg_scan = Arc::clone(&state.registry);
