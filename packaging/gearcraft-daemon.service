@@ -1,0 +1,21 @@
+[Unit]
+Description=GearCraft peripheral daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gearcraft-daemon
+Restart=on-failure
+RestartSec=2
+Environment=RUST_LOG=info
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/run /tmp
+DeviceAllow=/dev/hidraw* rw
+DeviceAllow=/dev/uinput rw
+SupplementaryGroups=plugdev input
+
+[Install]
+WantedBy=multi-user.target
