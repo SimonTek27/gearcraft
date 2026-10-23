@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release -p gearcraft-daemon $(if $(FEATURES),--features $(FEATURES),)
+
+override_dh_auto_test:
+	@echo "skip upstream tests in packaging"
+
+override_dh_auto_install:
+	@true

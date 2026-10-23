@@ -1,0 +1,3 @@
+target/release/gearcraft-daemon usr/bin/
+assets/udev/99-gearcraft.rules lib/udev/rules.d/
+packaging/gearcraft-daemon.service lib/systemd/system/

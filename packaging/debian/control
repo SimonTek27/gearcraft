@@ -1,0 +1,19 @@
+Source: gearcraft
+Section: utils
+Priority: optional
+Maintainer: GearCraft Contributors <dev@gearcraft.local>
+Build-Depends: debhelper-compat (= 13), cargo, rustc, pkg-config, libhidapi-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/SimonTek27/gearcraft
+Rules-Requires-Root: no
+
+Package: gearcraft-daemon
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Recommends: libhidapi-hidraw0
+Description: Open-source multi-brand peripheral daemon
+ GearCraft daemon talks to SteelSeries (and future brands) mice,
+ keyboards and headsets over USB HID, exposing a Unix-socket IPC API
+ used by the GearCraft desktop UI.
+ .
+ Alternative to proprietary SteelSeries GG on Linux.
