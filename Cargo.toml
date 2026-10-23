@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gearcraft-core",
+    "crates/gearcraft-daemon",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["GearCraft Contributors"]
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.36", features = ["full"] }
+thiserror = "1.0"
+uuid = { version = "=1.6.1", features = ["v4", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+gearcraft-core = { path = "crates/gearcraft-core" }
