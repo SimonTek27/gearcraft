@@ -30,14 +30,14 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 - [x] Home → live device list from daemon
 - [x] Engine → colour picker + zone apply (`set_color`)
-- [x] Macros store + Engine UI (add / test / delete) — execution stub
+- [x] Macros store + Engine UI (add / test / delete)
 - [x] Sonar → headset battery display
 - [x] ChatMix software + **PipeWire/Pulse** volume apply (`docs/CHATMIX.md`)
 
 ## Phase 3 — Input & audio depth 🔄
 
 - [x] **uinput** real macro playback + optional key grab
-- [ ] Persist macros to disk (`~/.config/gearcraft/macros.json`)
+- [x] Persist macros + ChatMix to disk (`~/.config/gearcraft/`)
 - [ ] WirePlumber static routes / session profiles for ChatMix
 - [ ] Hardware ChatMix dial read when available
 
@@ -73,9 +73,9 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 ## Near-term priority (next 2–4 weeks)
 
-1. uinput macro execution  
-2. Config persistence  
-3. Hardware validation on real devices  
-4. First AUR publish  
+1. Hardware validation on real devices (`--features hidapi`)  
+2. First AUR publish  
+3. WirePlumber static ChatMix routes  
+4. Per-device colour profile persistence  
 
 Contributions welcome — open an issue for device capture logs (Wireshark/USBPcap) or PipeWire routing tips.

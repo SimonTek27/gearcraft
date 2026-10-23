@@ -32,6 +32,7 @@ gearcraft/
 │   └── gearcraft-ui/          # Tauri frontend
 ├── docs/
 │   ├── devices.md             # device matrix by category
+│   ├── CONFIG.md              # XDG config persistence
 │   └── CHATMIX.md
 └── packaging/                 # systemd, deb, install scripts
 ```
@@ -63,8 +64,8 @@ Requires a working Tauri 2 toolchain (Rust ≥ 1.77 recommended, system webkit2g
 - [x] Daemon Unix-socket server (demo devices + first HID addon)  
 - [x] UI shell (custom titlebar, sidebar, Home / Engine / Sonar)  
 - [x] PipeWire ChatMix + uinput macros  
+- [x] Config persistence (`~/.config/gearcraft/`)  
 - [ ] Broader brand coverage (see [devices.md](docs/devices.md))  
-- [ ] Config persistence  
 - [ ] Packaging polish (AUR, wider udev coverage)
 
 ## Install daemon (systemd)
@@ -90,6 +91,10 @@ sudo dpkg -i packaging/gearcraft-daemon_*.deb
 ## ChatMix (PipeWire)
 
 See [docs/CHATMIX.md](docs/CHATMIX.md). In the UI: **Sonar → Setup Game/Chat sinks**, then move the balance slider.
+
+## Config
+
+Macros and ChatMix preferences live under `~/.config/gearcraft/`. See [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Contributing devices
 
