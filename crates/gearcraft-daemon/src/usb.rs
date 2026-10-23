@@ -28,12 +28,21 @@ pub const KNOWN_STEELSERIES: &[(u16, &str, DeviceKind)] = &[
     (0x12BE, "Arctis 7+", DeviceKind::Headset),
     (0x1260, "Arctis 7 (2017)", DeviceKind::Headset),
     (0x2202, "Arctis Nova 7", DeviceKind::Headset),
+    (0x2206, "Arctis Nova 7x", DeviceKind::Headset),
 ];
 
 /// Whether to skip real HID and use demo devices (env GEARCRAFT_DRY=1).
 pub fn is_dry_run() -> bool {
     matches!(
         std::env::var("GEARCRAFT_DRY").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+/// Scan-only diagnostic: list devices and exit (env GEARCRAFT_SCAN_ONLY=1).
+pub fn is_scan_only() -> bool {
+    matches!(
+        std::env::var("GEARCRAFT_SCAN_ONLY").as_deref(),
         Ok("1") | Ok("true") | Ok("yes")
     )
 }
@@ -68,11 +77,20 @@ pub fn scan_devices() -> Vec<DeviceInfo> {
 }
 
 #[cfg(feature = "hidapi")]
+fn preferred_interface(kind: &DeviceKind, iface: i32) -> i32 {
+    match kind {
+        DeviceKind::Mouse if iface >= 0 => iface,
+        _ => iface.max(0),
+    }
+}
+
+#[cfg(feature = "hidapi")]
 fn scan_with_hidapi() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Send + Sync>> {
     use hidapi::HidApi;
+    use std::collections::HashMap;
 
     let api = HidApi::new()?;
-    let mut out = Vec::new();
+    let mut best: HashMap<(u16, u16), (i32, DeviceInfo)> = HashMap::new();
 
     for device in api.device_list() {
         if device.vendor_id() != VID_STEELSERIES {
@@ -91,36 +109,45 @@ fn scan_with_hidapi() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Sen
             ),
         };
 
-        // Prefer the control interface used by rivalcfg (often interface 3 for Rival 3)
         let iface = device.interface_number();
         let path = device.path().to_string_lossy().into_owned();
-        let id = format!("ss-{:04x}-{:04x}-{}", VID_STEELSERIES, pid, iface);
+        let id = format!(
+            "ss-{:04x}-{:04x}-{}",
+            VID_STEELSERIES,
+            pid,
+            if iface >= 0 { iface } else { 0 }
+        );
 
-        out.push(DeviceInfo {
+        let info = DeviceInfo {
             id,
             name,
             vendor: "SteelSeries".into(),
-            kind,
+            kind: kind.clone(),
             vendor_id: VID_STEELSERIES,
             product_id: pid,
             path: Some(path),
-        });
+        };
+
+        let score = preferred_interface(&kind, iface);
+        let key = (VID_STEELSERIES, pid);
+        match best.get(&key) {
+            Some((prev, _)) if *prev >= score => {}
+            _ => {
+                best.insert(key, (score, info));
+            }
+        }
     }
 
-    // Deduplicate by product_id keeping the highest interface (control endpoint)
+    let mut out: Vec<_> = best.into_values().map(|(_, d)| d).collect();
     out.sort_by(|a, b| {
         a.product_id
             .cmp(&b.product_id)
-            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.name.cmp(&b.name))
     });
-    out.dedup_by(|a, b| a.product_id == b.product_id && a.vendor_id == b.vendor_id);
-
     Ok(out)
 }
 
 /// Open a HID device by path and write an output report.
-/// Report data should **not** include the report-ID leading zero if the
-/// device uses report ID 0; callers decide the payload layout.
 #[cfg(feature = "hidapi")]
 pub fn write_output_report(
     path: &str,
@@ -130,11 +157,11 @@ pub fn write_output_report(
 
     let api = HidApi::new()?;
     let device = api.open_path(std::ffi::CString::new(path)?.as_c_str())?;
-    // hidapi write: first byte is report ID (0x00 for most SteelSeries mice)
     let mut buf = Vec::with_capacity(data.len() + 1);
     buf.push(0x00);
     buf.extend_from_slice(data);
-    device.write(&buf)?;
+    let n = device.write(&buf)?;
+    debug!("HID write {n} bytes to {path}: {:02x?}", data);
     Ok(())
 }
 
@@ -145,4 +172,73 @@ pub fn write_output_report(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!("write_output_report (stub): {:02x?}", data);
     Ok(())
+}
+
+/// Write an output report then try to read a response (battery / status).
+#[cfg(feature = "hidapi")]
+pub fn write_then_read(
+    path: &str,
+    data: &[u8],
+    timeout_ms: i32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    use hidapi::HidApi;
+
+    let api = HidApi::new()?;
+    let device = api.open_path(std::ffi::CString::new(path)?.as_c_str())?;
+    let mut buf = Vec::with_capacity(data.len() + 1);
+    buf.push(0x00);
+    buf.extend_from_slice(data);
+    device.write(&buf)?;
+
+    let mut resp = vec![0u8; 64];
+    let n = device.read_timeout(&mut resp, timeout_ms)?;
+    if n == 0 {
+        return Err("HID read timeout".into());
+    }
+    resp.truncate(n);
+    debug!("HID read {n} bytes from {path}: {:02x?}", &resp);
+    Ok(resp)
+}
+
+#[cfg(not(feature = "hidapi"))]
+pub fn write_then_read(
+    _path: &str,
+    data: &[u8],
+    _timeout_ms: i32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    debug!("write_then_read (stub): {:02x?}", data);
+    if data == [0x06, 0x18] {
+        return Ok(vec![0x06, 0x18, 78]);
+    }
+    Ok(Vec::new())
+}
+
+/// Print a human-readable scan report (used by GEARCRAFT_SCAN_ONLY).
+pub fn print_scan_report() {
+    println!("GearCraft HID scan");
+    println!("  feature hidapi: {}", cfg!(feature = "hidapi"));
+    println!("  dry-run:        {}", is_dry_run());
+    let list = scan_devices();
+    if list.is_empty() {
+        println!("  devices:        (none)");
+        println!();
+        println!("Hints:");
+        println!("  • Build with:  cargo run -p gearcraft-daemon --features hidapi");
+        println!("  • udev rules:  sudo cp assets/udev/99-gearcraft.rules /etc/udev/rules.d/");
+        println!("  • group:       sudo usermod -aG plugdev $USER  (then re-login)");
+        println!("  • list raw:    lsusb -d 1038:");
+        return;
+    }
+    println!("  devices:        {}", list.len());
+    for d in &list {
+        println!(
+            "  - {}  [{:04x}:{:04x}]  kind={:?}  id={}  path={}",
+            d.name,
+            d.vendor_id,
+            d.product_id,
+            d.kind,
+            d.id,
+            d.path.as_deref().unwrap_or("-")
+        );
+    }
 }
