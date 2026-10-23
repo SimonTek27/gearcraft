@@ -1,11 +1,24 @@
 # GearCraft
 
-Open-source Linux alternative to SteelSeries GG. Multi-brand peripherals via a plugin/addon system. Written in Rust.
+**Open-source peripheral control for Linux** — RGB, macros, headset mix and device profiles, without locking you to a single vendor.
+
+GearCraft is a brand-agnostic desktop stack: a background daemon talks to USB/HID devices through plugins, and a modern UI lets you manage them. New brands are added as addons; software features (ChatMix, macros, profiles) work across devices.
 
 **License**: [GPL-3.0-or-later](LICENSE)  
 **UI**: Tauri 2 + Svelte 5 + Tailwind  
-**Daemon**: HID + Unix socket IPC + PipeWire ChatMix  
+**Daemon**: hidapi + Unix socket IPC  
 **Design**: dark theme, accent `#00E7A0`
+
+## Why
+
+Vendor control apps on Linux are scarce or incomplete. GearCraft aims to be one place for:
+
+- Lighting and simple profiles on supported mice / keyboards / headsets  
+- Software ChatMix (game vs chat balance) on PipeWire  
+- Macro playback via uinput  
+- A clean plugin model so the project is **not** tied to one brand
+
+Supported and planned devices are listed by category in [docs/devices.md](docs/devices.md).
 
 ## Project layout
 
@@ -13,28 +26,75 @@ Open-source Linux alternative to SteelSeries GG. Multi-brand peripherals via a p
 gearcraft/
 ├── Cargo.toml                 # workspace
 ├── PROTOCOL.md                # IPC protocol
-├── ROADMAP.md
 ├── crates/
-│   ├── gearcraft-core/
-│   ├── gearcraft-daemon/
-│   └── gearcraft-ui/
-├── assets/udev/
+│   ├── gearcraft-core/        # types + PeripheralAddon trait + IPC messages
+│   ├── gearcraft-daemon/      # background service + brand addons
+│   └── gearcraft-ui/          # Tauri frontend
 ├── docs/
-└── packaging/
+│   ├── devices.md             # device matrix by category
+│   └── CHATMIX.md
+└── packaging/                 # systemd, deb, install scripts
 ```
 
-## Quick start
+## Quick start (development)
+
+### 1. Daemon
 
 ```bash
-# Daemon
+cd gearcraft
 cargo run -p gearcraft-daemon
-
-# UI
-cd crates/gearcraft-ui && npm install && npm run tauri dev
 ```
 
-Live USB: `cargo run -p gearcraft-daemon --features hidapi` (needs `libhidapi`).
+Listens on `$XDG_RUNTIME_DIR/gearcraft.sock` (or `/tmp/gearcraft.sock`).
 
-Macros need write access to `/dev/uinput` (group `input` or root).
+### 2. UI
 
-See [ROADMAP.md](ROADMAP.md), [docs/CHATMIX.md](docs/CHATMIX.md), [docs/STEELSERIES.md](docs/STEELSERIES.md).
+```bash
+cd crates/gearcraft-ui
+npm install
+npm run tauri dev
+```
+
+Requires a working Tauri 2 toolchain (Rust ≥ 1.77 recommended, system webkit2gtk, etc.).
+
+## Status
+
+- [x] Workspace + core types + IPC protocol  
+- [x] Daemon Unix-socket server (demo devices + first HID addon)  
+- [x] UI shell (custom titlebar, sidebar, Home / Engine / Sonar)  
+- [x] PipeWire ChatMix + uinput macros  
+- [ ] Broader brand coverage (see [devices.md](docs/devices.md))  
+- [ ] Config persistence  
+- [ ] Packaging polish (AUR, wider udev coverage)
+
+## Install daemon (systemd)
+
+```bash
+# demo build
+sudo ./packaging/install.sh
+
+# with live USB
+FEATURES=hidapi sudo -E ./packaging/install.sh
+
+sudo systemctl enable --now gearcraft-daemon
+```
+
+## Build .deb
+
+```bash
+./packaging/build-deb.sh
+# output: packaging/gearcraft-daemon_0.1.0-1_amd64.deb
+sudo dpkg -i packaging/gearcraft-daemon_*.deb
+```
+
+## ChatMix (PipeWire)
+
+See [docs/CHATMIX.md](docs/CHATMIX.md). In the UI: **Sonar → Setup Game/Chat sinks**, then move the balance slider.
+
+## Contributing devices
+
+1. Pick a category in [docs/devices.md](docs/devices.md).  
+2. Implement `PeripheralAddon` for that brand/family.  
+3. Extend udev rules and document VID/PID in the matrix.  
+
+No brand is privileged in the architecture — first-party and community addons share the same trait.
