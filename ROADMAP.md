@@ -1,6 +1,6 @@
 # GearCraft Roadmap
 
-Open-source multi-brand peripheral stack for Linux (alternative to SteelSeries GG).
+Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, profiles).
 
 **License**: GPL-3.0-or-later  
 **Stack**: Rust workspace · Tauri 2 · Svelte 5 · PipeWire · HID
@@ -9,7 +9,7 @@ Open-source multi-brand peripheral stack for Linux (alternative to SteelSeries G
 
 ## Phase 0 — Foundation ✅
 
-- [x] Project name, architecture, design system (SteelSeries-inspired dark UI)
+- [x] Project name, architecture, design system (dark UI, accent `#00E7A0`)
 - [x] Cargo workspace: `gearcraft-core`, `gearcraft-daemon`, `gearcraft-ui`
 - [x] IPC protocol (Unix socket, length-prefixed JSON) — see [PROTOCOL.md](PROTOCOL.md)
 - [x] UI shell: custom titlebar, sidebar, Home / Engine / Sonar
@@ -18,7 +18,7 @@ Open-source multi-brand peripheral stack for Linux (alternative to SteelSeries G
 ## Phase 1 — Daemon & devices ✅
 
 - [x] Device registry + demo devices
-- [x] SteelSeries addon split by protocol:
+- [x] First HID addon family (mice / keyboards / headsets):
   - [x] Rival 3 family (RGB zones, polling, effects)
   - [x] Apex keyboards (uniform RGB)
   - [x] Arctis headsets (battery query stubs)
@@ -30,21 +30,21 @@ Open-source multi-brand peripheral stack for Linux (alternative to SteelSeries G
 
 - [x] Home → live device list from daemon
 - [x] Engine → colour picker + zone apply (`set_color`)
-- [x] Macros store + Engine UI (add / test / delete)
+- [x] Macros store + Engine UI (add / test / delete) — execution stub
 - [x] Sonar → headset battery display
 - [x] ChatMix software + **PipeWire/Pulse** volume apply (`docs/CHATMIX.md`)
 
 ## Phase 3 — Input & audio depth 🔄
 
-- [x] **uinput** real macro playback + fallback log when `/dev/uinput` unavailable
+- [x] **uinput** real macro playback + optional key grab
 - [ ] Persist macros to disk (`~/.config/gearcraft/macros.json`)
 - [ ] WirePlumber static routes / session profiles for ChatMix
-- [ ] Hardware ChatMix dial read (Arctis) when available
+- [ ] Hardware ChatMix dial read when available
 
 ## Phase 4 — Hardware completeness
 
-- [ ] Live testing matrix (Rival 3, Apex 5, Arctis 7) with `--features hidapi`
-- [ ] Per-key / multi-zone Apex RGB from OpenRGB captures
+- [ ] Live testing matrix (mice / keyboards / headsets) with `--features hidapi`
+- [ ] Per-key / multi-zone keyboard RGB from open captures
 - [ ] Live battery HID read + charge state
 - [ ] Hotplug via udev monitor (replace periodic rescan)
 
@@ -71,10 +71,11 @@ Open-source multi-brand peripheral stack for Linux (alternative to SteelSeries G
 
 ---
 
-## Near-term priority
+## Near-term priority (next 2–4 weeks)
 
-1. Config persistence for macros/ChatMix
-2. Hardware validation on real SteelSeries gear
-3. First AUR publish
+1. uinput macro execution  
+2. Config persistence  
+3. Hardware validation on real devices  
+4. First AUR publish  
 
-Contributions welcome — open an issue for device capture logs or PipeWire routing tips.
+Contributions welcome — open an issue for device capture logs (Wireshark/USBPcap) or PipeWire routing tips.
