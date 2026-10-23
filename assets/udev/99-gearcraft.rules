@@ -1,0 +1,6 @@
+# GearCraft – udev rules for gaming peripherals
+# Install: sudo cp assets/udev/99-gearcraft.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload-rules && sudo udevadm trigger
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb",    ATTRS{idVendor}=="1038", MODE="0660", GROUP="plugdev", TAG+="uaccess"
