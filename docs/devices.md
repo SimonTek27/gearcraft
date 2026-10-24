@@ -101,4 +101,4 @@ GPU lighting is secondary; prefer OpenRGB or vendor tools where GearCraft has no
 4. **Protocol sources** – document independent research (e.g. open reverse-engineering projects under compatible licenses). Do not copy proprietary vendor apps.
 5. **Software features** (ChatMix, macros via uinput) apply across brands and do not require a specific vendor device.
 
-For HID protocol details of the current first addon family, see `crates/gearcraft-daemon/src/addons/steelseries/`.
+For HID protocol details of the current SteelSeries family implementation, see the `steelseries` addon sources under `crates/gearcraft-daemon/src/addons/steelseries/`.
