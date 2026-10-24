@@ -19,12 +19,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = App::new()?;
     refresh(&ui);
     refresh_chatmix(&ui);
+    refresh_audio_presets(&ui);
 
     let ui_weak = ui.as_weak();
     ui.on_refresh_devices(move || {
         if let Some(ui) = ui_weak.upgrade() {
             refresh(&ui);
             refresh_chatmix(&ui);
+            refresh_audio_presets(&ui);
         }
     });
 
@@ -32,7 +34,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_select_device(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             ui.set_selected_device_id(id.clone());
-            // Find name from current model
             let devices = ui.get_devices();
             let mut name = SharedString::from("—");
             for i in 0..devices.row_count() {
@@ -110,7 +111,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             update_channel(&ui, id.as_str(), |ch| {
                 ch.volume = vol;
             });
-            // Drive ChatMix from game/chat faders
             if id == "game" || id == "chat" {
                 let (game, chat) = channel_volumes(&ui);
                 let sum = game + chat;
@@ -154,6 +154,98 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_toggle_sonar(move || {
         if let Some(ui) = ui_weak.upgrade() {
             ui.set_sonar_enabled(!ui.get_sonar_enabled());
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_refresh_presets(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            refresh_audio_presets(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_load_preset(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            match ipc::load_audio_preset(id.as_str()) {
+                Ok(v) => {
+                    let name = v
+                        .get("preset_name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("preset");
+                    ui.set_active_preset_id(id.clone());
+                    ui.set_active_preset_name(SharedString::from(name));
+                    let dsp = v
+                        .get("dsp_message")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("");
+                    let msg = if dsp.is_empty() {
+                        format!("Preset loaded: {name}")
+                    } else {
+                        format!("Preset «{name}» — {dsp}")
+                    };
+                    ui.set_status_text(SharedString::from(msg));
+                    refresh_chatmix(&ui);
+                    refresh_audio_presets(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_save_preset(move |name| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let name = name.to_string();
+            if name.trim().is_empty() {
+                ui.set_status_text(SharedString::from("Preset name required"));
+                return;
+            }
+            let id = name
+                .to_lowercase()
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect::<String>();
+            let balance = ui.get_chatmix_balance() as i8;
+            let game = ui.get_game_volume() as u8;
+            let chat = ui.get_chat_volume() as u8;
+            let preset = gearcraft_core::AudioPreset {
+                id: id.clone(),
+                name: name.clone(),
+                effects: gearcraft_core::AudioEffects::default(),
+                chatmix: Some(gearcraft_core::ChatMixState {
+                    balance,
+                    game_volume: game,
+                    chat_volume: chat,
+                }),
+                notes: String::new(),
+            };
+            match ipc::save_audio_preset(preset) {
+                Ok(_) => {
+                    ui.set_active_preset_id(SharedString::from(id));
+                    ui.set_active_preset_name(SharedString::from(name.clone()));
+                    ui.set_status_text(SharedString::from(format!("Preset saved: {name}")));
+                    refresh_audio_presets(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_delete_preset(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            match ipc::delete_audio_preset(id.as_str()) {
+                Ok(_) => {
+                    if ui.get_active_preset_id() == id {
+                        ui.set_active_preset_id(SharedString::from(""));
+                        ui.set_active_preset_name(SharedString::from("—"));
+                    }
+                    ui.set_status_text(SharedString::from("Preset deleted"));
+                    refresh_audio_presets(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
         }
     });
 
@@ -233,26 +325,17 @@ fn refresh_chatmix(ui: &App) {
 }
 
 fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
-    let balance = v
-        .get("balance")
-        .and_then(|x| x.as_i64())
-        .unwrap_or(0) as i32;
+    let balance = v.get("balance").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
     let game = v
         .get("game_volume")
-        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
+        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f as u64)))
         .unwrap_or(100) as i32;
     let chat = v
         .get("chat_volume")
         .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
         .unwrap_or(100) as i32;
-    let backend = v
-        .get("backend")
-        .and_then(|x| x.as_str())
-        .unwrap_or("—");
-    let ready = v
-        .get("available")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
+    let backend = v.get("backend").and_then(|x| x.as_str()).unwrap_or("—");
+    let ready = v.get("available").and_then(|x| x.as_bool()).unwrap_or(false);
 
     ui.set_chatmix_balance(balance);
     ui.set_game_volume(game.clamp(0, 100));
@@ -293,4 +376,43 @@ fn channel_volumes(ui: &App) -> (i32, i32) {
         }
     }
     (game, chat)
+}
+
+fn refresh_audio_presets(ui: &App) {
+    match ipc::list_audio_presets() {
+        Ok(Value::Array(arr)) => {
+            let mut rows = Vec::new();
+            for item in arr {
+                let id = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Preset")
+                    .to_string();
+                let notes = item
+                    .get("notes")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let eq = item
+                    .get("effects")
+                    .and_then(|e| e.get("eq_enabled"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                rows.push(PresetRow {
+                    id: SharedString::from(id),
+                    name: SharedString::from(name),
+                    notes: SharedString::from(notes),
+                    eq_enabled: eq,
+                });
+            }
+            ui.set_presets(ModelRc::new(VecModel::from(rows)));
+        }
+        Ok(_) => ui.set_presets(ModelRc::new(VecModel::from(vec![]))),
+        Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+    }
 }
