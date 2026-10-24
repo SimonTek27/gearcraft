@@ -7,15 +7,14 @@
 //! - GAME  → gearcraft_game   (Steam, Wine, …)
 //! - AUX   → gearcraft_aux    (OBS, …)
 //!
-//! Rules: built-in defaults + optional `~/.config/gearcraft/app_routes.json`.
+//! Rules are built-in and always active — no config file required.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Sonar channel target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +52,6 @@ impl Channel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteRule {
-    /// Substring match (case-insensitive) against binary or app name
     pub match_pattern: String,
     pub channel: Channel,
     #[serde(default)]
@@ -81,45 +79,11 @@ impl Default for AppRouteConfig {
     }
 }
 
-fn routes_path() -> PathBuf {
-    crate::config::config_dir().join("app_routes.json")
-}
-
+/// Always-on built-in rules — no config file required.
 pub fn load_config() -> AppRouteConfig {
-    let path = routes_path();
-    match std::fs::read_to_string(&path) {
-        Ok(data) => match serde_json::from_str::<AppRouteConfig>(&data) {
-            Ok(mut cfg) => {
-                if cfg.rules.is_empty() {
-                    cfg.rules = builtin_rules();
-                }
-                info!(
-                    "app routing: {} rule(s) from {}",
-                    cfg.rules.len(),
-                    path.display()
-                );
-                cfg
-            }
-            Err(e) => {
-                warn!("app_routes.json parse error: {e}; using builtins");
-                AppRouteConfig::default()
-            }
-        },
-        Err(_) => {
-            let cfg = AppRouteConfig::default();
-            let _ = save_config(&cfg);
-            cfg
-        }
-    }
-}
-
-pub fn save_config(cfg: &AppRouteConfig) -> Result<(), String> {
-    let path = routes_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let data = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, data).map_err(|e| e.to_string())
+    let cfg = AppRouteConfig::default();
+    info!("app routing: {} built-in rule(s), automatic", cfg.rules.len());
+    cfg
 }
 
 fn builtin_rules() -> Vec<RouteRule> {
@@ -348,11 +312,7 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
                 };
                 let msg = format!(
                     "#{} «{}» ({}) → {} [{}]",
-                    inp.id,
-                    label,
-                    inp.binary,
-                    target,
-                    ch.as_str()
+                    inp.id, label, inp.binary, target, ch.as_str()
                 );
                 info!("app route: {msg}");
                 report.actions.push(msg);
@@ -368,16 +328,11 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
 }
 
 pub async fn run_loop(interval_secs: u64) {
-    let mut cfg = load_config();
-    let mut ticks: u64 = 0;
+    let cfg = load_config();
     let mut interval =
         tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(1)));
     loop {
         interval.tick().await;
-        ticks += 1;
-        if ticks % 30 == 0 {
-            cfg = load_config();
-        }
         let report = route_pass(&cfg).await;
         if report.moved > 0 {
             info!(
