@@ -107,7 +107,12 @@ if [[ "$DO_RGB" -eq 1 ]]; then
     python3 - <<'PY' || true
 import json, os, socket, struct, uuid
 sock_path = os.environ.get("XDG_RUNTIME_DIR", "/tmp") + "/gearcraft.sock"
-req = {"id": str(uuid.uuid4()), "cmd": {"name": "get_devices"}}
+req = {
+  "id": str(uuid.uuid4()),
+  "cmd": {
+    "name": "get_devices",
+  },
+}
 body = json.dumps(req).encode()
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.connect(sock_path)
