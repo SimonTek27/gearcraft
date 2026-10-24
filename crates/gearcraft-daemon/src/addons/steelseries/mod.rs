@@ -11,12 +11,12 @@ mod arctis;
 mod rival3;
 
 use gearcraft_core::{DeviceInfo, DeviceKind, PeripheralAddon, RgbColor};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::usb;
 
 pub use apex::{apex_direct_color_report, is_apex_family};
-pub use arctis::{arctis_battery_request, is_arctis_family, parse_battery_response};
+pub use arctis::{arctis_battery_request, arctis_connection_request, is_arctis_family, parse_battery_response};
 pub use rival3::{
     is_rival3_family, rival3_color_report, rival3_effect_report, rival3_polling_report,
     rival3_save_report,
@@ -93,6 +93,7 @@ impl PeripheralAddon for SteelSeriesAddon {
             self.info.name
         );
         if is_arctis_family(self.info.product_id) {
+            // Best-effort battery poll (write + read when hidapi is available)
             if let Some(path) = self.path.as_deref() {
                 match usb::write_then_read(path, &arctis_battery_request(), 500) {
                     Ok(resp) => {
@@ -104,6 +105,15 @@ impl PeripheralAddon for SteelSeriesAddon {
                         }
                     }
                     Err(e) => warn!("{} battery query: {e}", self.info.name),
+                }
+                // Connection probe (best-effort; response not always available)
+                match usb::write_then_read(path, &arctis_connection_request(), 300) {
+                    Ok(resp) => {
+                        info!("{} connection query resp {:02x?}", self.info.name, resp);
+                    }
+                    Err(e) => {
+                        debug!("{} connection query: {e}", self.info.name);
+                    }
                 }
             }
         }
@@ -141,6 +151,7 @@ impl PeripheralAddon for SteelSeriesAddon {
             }
         }
 
+        // Single flat colour for keyboards
         if let Some(c) = profile_data.get("color") {
             let r = c.get("r").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
             let g = c.get("g").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
@@ -183,6 +194,7 @@ impl PeripheralAddon for SteelSeriesAddon {
         }
 
         if is_apex_family(self.info.product_id) {
+            // Apex: paint all zones (or "all") with the same colour for now
             self.send(&apex_direct_color_report(&color))?;
             return Ok(());
         }
@@ -207,4 +219,34 @@ pub fn try_create(info: &DeviceInfo) -> Option<Box<dyn PeripheralAddon>> {
         return None;
     }
     Some(Box::new(SteelSeriesAddon::new(info.clone())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rival3_logo_report() {
+        let c = RgbColor {
+            r: 0,
+            g: 231,
+            b: 160,
+        };
+        assert_eq!(
+            rival3_color_report(0x04, &c, 100),
+            vec![0x05, 0x00, 0x04, 0, 231, 160, 0x64]
+        );
+    }
+
+    #[test]
+    fn apex_report_len() {
+        let c = RgbColor {
+            r: 255,
+            g: 0,
+            b: 0,
+        };
+        let r = apex_direct_color_report(&c);
+        assert!(r.len() >= 10);
+        assert_eq!(r[0], 0x21);
+    }
 }
