@@ -6,11 +6,13 @@
 //! |------|---------|
 //! | `macros.json` | Array of [`MacroDef`] |
 //! | `settings.json` | ChatMix balance and future preferences |
+//! | `audio_presets.json` | Named EQ/effects presets (JDSP-style) |
+//! | `preset_rules.json` | Device → preset auto-apply rules |
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gearcraft_core::{ChatMixState, MacroDef};
+use gearcraft_core::{AudioPreset, ChatMixState, MacroDef, PresetRule};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -35,6 +37,14 @@ pub fn macros_path() -> PathBuf {
 
 pub fn settings_path() -> PathBuf {
     config_dir().join("settings.json")
+}
+
+pub fn audio_presets_path() -> PathBuf {
+    config_dir().join("audio_presets.json")
+}
+
+pub fn preset_rules_path() -> PathBuf {
+    config_dir().join("preset_rules.json")
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +120,46 @@ pub fn save_macros(macros: &[MacroDef]) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Audio presets & rules
+// ---------------------------------------------------------------------------
+
+pub fn load_audio_presets() -> Option<Vec<AudioPreset>> {
+    let path = audio_presets_path();
+    match read_json::<Vec<AudioPreset>>(&path) {
+        Ok(list) => {
+            info!("loaded {} audio preset(s) from {}", list.len(), path.display());
+            Some(list)
+        }
+        Err(e) => {
+            info!("no audio presets file yet ({e})");
+            None
+        }
+    }
+}
+
+pub fn save_audio_presets(presets: &[AudioPreset]) -> Result<(), String> {
+    write_json(&audio_presets_path(), &presets)
+}
+
+pub fn load_preset_rules() -> Option<Vec<PresetRule>> {
+    let path = preset_rules_path();
+    match read_json::<Vec<PresetRule>>(&path) {
+        Ok(list) => {
+            info!("loaded {} preset rule(s) from {}", list.len(), path.display());
+            Some(list)
+        }
+        Err(e) => {
+            info!("no preset rules file yet ({e})");
+            None
+        }
+    }
+}
+
+pub fn save_preset_rules(rules: &[PresetRule]) -> Result<(), String> {
+    write_json(&preset_rules_path(), &rules)
+}
+
+// ---------------------------------------------------------------------------
 // JSON helpers
 // ---------------------------------------------------------------------------
 
@@ -123,7 +173,6 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let data = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    // Atomic-ish write: temp then rename
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, data.as_bytes()).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;
