@@ -328,7 +328,7 @@ fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
     let balance = v.get("balance").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
     let game = v
         .get("game_volume")
-        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f as u64)))
+        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
         .unwrap_or(100) as i32;
     let chat = v
         .get("chat_volume")
