@@ -1,54 +1,46 @@
 #!/usr/bin/env bash
-# Build a simple .deb for gearcraft-daemon (user-space, no root needed at runtime
-# beyond udev rules).
+# Build a simple .deb without full dpkg-buildpackage (no rustc version fights).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
-ARCH="${ARCH:-amd64}"
-PKG="gearcraft-daemon_${VERSION}_${ARCH}"
-OUT="$ROOT/packaging/${PKG}"
+cd "$ROOT"
+VERSION=0.1.0
+ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+PKG=gearcraft-daemon_${VERSION}-1_${ARCH}
+DEST="/tmp/${PKG}"
 
-rm -rf "$OUT"
-mkdir -p "$OUT/DEBIAN" "$OUT/usr/bin" "$OUT/usr/lib/systemd/user" \
-         "$OUT/usr/lib/udev/rules.d" "$OUT/usr/share/doc/gearcraft-daemon"
+echo "==> Building release binary"
+cargo build --release -p gearcraft-daemon ${FEATURES:+--features "$FEATURES"}
 
-# Binary
-cargo build -p gearcraft-daemon --release --manifest-path "$ROOT/Cargo.toml"
-install -m755 "$ROOT/target/release/gearcraft-daemon" "$OUT/usr/bin/gearcraft-daemon"
+rm -rf "$DEST"
+mkdir -p "$DEST/DEBIAN" \
+         "$DEST/usr/bin" \
+         "$DEST/lib/udev/rules.d" \
+         "$DEST/lib/systemd/system" \
+         "$DEST/usr/share/doc/gearcraft-daemon"
 
-# systemd user unit
-install -m644 "$ROOT/packaging/gearcraft-daemon.service" \
-  "$OUT/usr/lib/systemd/user/gearcraft-daemon.service"
+install -m755 target/release/gearcraft-daemon "$DEST/usr/bin/"
+install -m644 assets/udev/99-gearcraft.rules "$DEST/lib/udev/rules.d/"
+install -m644 packaging/gearcraft-daemon.service "$DEST/lib/systemd/system/"
+install -m644 LICENSE "$DEST/usr/share/doc/gearcraft-daemon/copyright"
+gzip -9c packaging/debian/changelog > "$DEST/usr/share/doc/gearcraft-daemon/changelog.Debian.gz"
 
-# udev
-install -m644 "$ROOT/assets/udev/99-gearcraft.rules" \
-  "$OUT/usr/lib/udev/rules.d/99-gearcraft.rules"
-
-# docs
-cp "$ROOT/LICENSE" "$OUT/usr/share/doc/gearcraft-daemon/copyright"
-echo "GearCraft daemon $VERSION" > "$OUT/usr/share/doc/gearcraft-daemon/README"
-
-# control
-cat > "$OUT/DEBIAN/control" <<EOF
+cat > "$DEST/DEBIAN/control" << CTRL
 Package: gearcraft-daemon
-Version: $VERSION
+Version: ${VERSION}-1
 Section: utils
 Priority: optional
-Architecture: $ARCH
-Depends: libc6, libudev1
-Maintainer: GearCraft Contributors
-Description: Open-source peripheral daemon for SteelSeries and friends on Linux
- GearCraft provides RGB, DPI, macros and ChatMix without proprietary software.
-EOF
+Architecture: ${ARCH}
+Maintainer: GearCraft Contributors <dev@gearcraft.local>
+Depends: adduser
+Recommends: libhidapi-hidraw0
+Description: Open-source multi-brand peripheral daemon
+ Alternative to SteelSeries GG on Linux (Rival / Apex / Arctis).
+CTRL
 
-cat > "$OUT/DEBIAN/postinst" <<'EOF'
-#!/bin/sh
-set -e
-udevadm control --reload-rules || true
-udevadm trigger || true
-exit 0
-EOF
-chmod 755 "$OUT/DEBIAN/postinst"
+cp packaging/debian/gearcraft-daemon.postinst "$DEST/DEBIAN/postinst"
+chmod 755 "$DEST/DEBIAN/postinst"
 
-dpkg-deb --build "$OUT" "$ROOT/packaging/${PKG}.deb"
-echo "Built $ROOT/packaging/${PKG}.deb"
+OUT="$ROOT/packaging/${PKG}.deb"
+dpkg-deb --build "$DEST" "$OUT"
+echo "==> Built $OUT"
+ls -lh "$OUT"

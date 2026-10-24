@@ -1,29 +1,27 @@
-# AUR PKGBUILD snippet for gearcraft-daemon
-# Copy into a dedicated AUR package repo when ready.
+# Snippet for an AUR PKGBUILD (gearcraft-daemon)
+# Maintainer: GearCraft Contributors
 
 pkgname=gearcraft-daemon
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Open-source peripheral daemon (SteelSeries RGB/DPI/macros/ChatMix)"
+pkgdesc="Open-source multi-brand peripheral daemon (SteelSeries GG alternative)"
 arch=('x86_64')
-url="https://github.com/SimonTek27/gearcraft"
-license=('GPL3')
-depends=('libudev' 'pipewire')
-makedepends=('cargo' 'git')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/SimonTek27/gearcraft/archive/refs/tags/v$pkgver.tar.gz")
+url="https://github.com/gearcraft/gearcraft"
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'systemd-libs')
+optdepends=('hidapi: live USB support')
+makedepends=('cargo' 'pkgconf')
+source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
   cd "gearcraft-$pkgver"
-  cargo build --release -p gearcraft-daemon --locked
+  cargo build --release -p gearcraft-daemon
 }
 
 package() {
   cd "gearcraft-$pkgver"
   install -Dm755 target/release/gearcraft-daemon "$pkgdir/usr/bin/gearcraft-daemon"
-  install -Dm644 packaging/gearcraft-daemon.service \
-    "$pkgdir/usr/lib/systemd/user/gearcraft-daemon.service"
-  install -Dm644 assets/udev/99-gearcraft.rules \
-    "$pkgdir/usr/lib/udev/rules.d/99-gearcraft.rules"
-  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 assets/udev/99-gearcraft.rules "$pkgdir/usr/lib/udev/rules.d/99-gearcraft.rules"
+  install -Dm644 packaging/gearcraft-daemon.service "$pkgdir/usr/lib/systemd/system/gearcraft-daemon.service"
 }

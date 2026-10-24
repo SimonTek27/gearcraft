@@ -1,5 +1,6 @@
 [Unit]
 Description=GearCraft peripheral daemon
+Documentation=https://github.com/gearcraft/gearcraft
 After=network.target
 
 [Service]
@@ -8,14 +9,18 @@ ExecStart=/usr/bin/gearcraft-daemon
 Restart=on-failure
 RestartSec=2
 Environment=RUST_LOG=info
+# Uncomment for live USB (requires binary built with --features hidapi)
+# Environment=GEARCRAFT_DRY=0
+
+# Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
 ReadWritePaths=/run /tmp
+# Allow access to hidraw
 DeviceAllow=/dev/hidraw* rw
-DeviceAllow=/dev/uinput rw
-SupplementaryGroups=plugdev input
+SupplementaryGroups=plugdev
 
 [Install]
 WantedBy=multi-user.target
