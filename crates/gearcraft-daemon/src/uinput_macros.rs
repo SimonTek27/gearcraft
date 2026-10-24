@@ -12,7 +12,7 @@ use std::os::unix::io::AsRawFd;
 use std::thread;
 use std::time::Duration;
 
-use tracing::{info, warn};
+use tracing::info;
 
 use gearcraft_core::MacroDef;
 
@@ -52,63 +52,92 @@ struct InputEvent {
 }
 
 fn key_map() -> HashMap<&'static str, u16> {
-    let mut m = HashMap::new();
+    // All keys use &'static str literals — no temporary strings.
     const LETTERS: &[(&str, u16)] = &[
-        ("a", 30), ("b", 48), ("c", 46), ("d", 32), ("e", 18), ("f", 33),
-        ("g", 34), ("h", 35), ("i", 23), ("j", 36), ("k", 37), ("l", 38),
-        ("m", 50), ("n", 49), ("o", 24), ("p", 25), ("q", 16), ("r", 19),
-        ("s", 31), ("t", 20), ("u", 22), ("v", 47), ("w", 17), ("x", 45),
-        ("y", 21), ("z", 44),
+        ("a", 30),
+        ("b", 48),
+        ("c", 46),
+        ("d", 32),
+        ("e", 18),
+        ("f", 33),
+        ("g", 34),
+        ("h", 35),
+        ("i", 23),
+        ("j", 36),
+        ("k", 37),
+        ("l", 38),
+        ("m", 50),
+        ("n", 49),
+        ("o", 24),
+        ("p", 25),
+        ("q", 16),
+        ("r", 19),
+        ("s", 31),
+        ("t", 20),
+        ("u", 22),
+        ("v", 47),
+        ("w", 17),
+        ("x", 45),
+        ("y", 21),
+        ("z", 44),
     ];
-    for (k, v) in LETTERS {
-        m.insert(*k, *v);
+    const DIGITS: &[(&str, u16)] = &[
+        ("1", 2),
+        ("2", 3),
+        ("3", 4),
+        ("4", 5),
+        ("5", 6),
+        ("6", 7),
+        ("7", 8),
+        ("8", 9),
+        ("9", 10),
+        ("0", 11),
+    ];
+    const FUNCTION: &[(&str, u16)] = &[
+        ("f1", 59),
+        ("f2", 60),
+        ("f3", 61),
+        ("f4", 62),
+        ("f5", 63),
+        ("f6", 64),
+        ("f7", 65),
+        ("f8", 66),
+        ("f9", 67),
+        ("f10", 68),
+        ("f11", 87),
+        ("f12", 88),
+    ];
+    const SPECIAL: &[(&str, u16)] = &[
+        ("enter", 28),
+        ("return", 28),
+        ("esc", 1),
+        ("escape", 1),
+        ("space", 57),
+        ("tab", 15),
+        ("backspace", 14),
+        ("left", 105),
+        ("right", 106),
+        ("up", 103),
+        ("down", 108),
+        ("ctrl", 29),
+        ("control", 29),
+        ("leftctrl", 29),
+        ("rightctrl", 97),
+        ("shift", 42),
+        ("leftshift", 42),
+        ("rightshift", 54),
+        ("alt", 56),
+        ("leftalt", 56),
+        ("rightalt", 100),
+        ("meta", 125),
+        ("super", 125),
+        ("win", 125),
+    ];
+
+    let mut m = HashMap::new();
+    for &(k, v) in LETTERS.iter().chain(DIGITS).chain(FUNCTION).chain(SPECIAL) {
+        m.insert(k, v);
     }
-    m.insert("1", 2);
-    m.insert("2", 3);
-    m.insert("3", 4);
-    m.insert("4", 5);
-    m.insert("5", 6);
-    m.insert("6", 7);
-    m.insert("7", 8);
-    m.insert("8", 9);
-    m.insert("9", 10);
-    m.insert("0", 11);
-    m.insert("f1", 59);
-    m.insert("f2", 60);
-    m.insert("f3", 61);
-    m.insert("f4", 62);
-    m.insert("f5", 63);
-    m.insert("f6", 64);
-    m.insert("f7", 65);
-    m.insert("f8", 66);
-    m.insert("f9", 67);
-    m.insert("f10", 68);
-    m.insert("f11", 87);
-    m.insert("f12", 88);
-    m.insert("enter", 28);
-    m.insert("return", 28);
-    m.insert("esc", 1);
-    m.insert("escape", 1);
-    m.insert("space", 57);
-    m.insert("tab", 15);
-    m.insert("backspace", 14);
-    m.insert("left", 105);
-    m.insert("right", 106);
-    m.insert("up", 103);
-    m.insert("down", 108);
-    m.insert("ctrl", 29);
-    m.insert("control", 29);
-    m.insert("leftctrl", 29);
-    m.insert("rightctrl", 97);
-    m.insert("shift", 42);
-    m.insert("leftshift", 42);
-    m.insert("rightshift", 54);
-    m.insert("alt", 56);
-    m.insert("leftalt", 56);
-    m.insert("rightalt", 100);
-    m.insert("meta", 125);
-    m.insert("super", 125);
-    m.insert("win", 125);
     m
 }
 
@@ -167,78 +196,90 @@ pub fn play_macro(def: &MacroDef) -> Result<bool, String> {
         sequences.push((codes, action.delay_ms));
     }
 
-    match open_uinput_device(&map) {
+    match open_uinput(&sequences) {
         Ok(mut file) => {
-            thread::sleep(Duration::from_millis(50));
-            for (codes, delay) in &sequences {
-                for &c in codes {
-                    emit(&mut file, EV_KEY, c, 1).map_err(|e| e.to_string())?;
+            for (codes, delay_ms) in &sequences {
+                // Press all keys in combo
+                for &code in codes {
+                    emit(&mut file, EV_KEY, code, 1).map_err(|e| e.to_string())?;
                 }
                 emit(&mut file, EV_SYN, SYN_REPORT, 0).map_err(|e| e.to_string())?;
                 thread::sleep(Duration::from_millis(20));
-                for &c in codes.iter().rev() {
-                    emit(&mut file, EV_KEY, c, 0).map_err(|e| e.to_string())?;
+                // Release in reverse
+                for &code in codes.iter().rev() {
+                    emit(&mut file, EV_KEY, code, 0).map_err(|e| e.to_string())?;
                 }
                 emit(&mut file, EV_SYN, SYN_REPORT, 0).map_err(|e| e.to_string())?;
-                if *delay > 0 {
-                    thread::sleep(Duration::from_millis(*delay as u64));
-                } else {
-                    thread::sleep(Duration::from_millis(30));
+                if *delay_ms > 0 {
+                    thread::sleep(Duration::from_millis(*delay_ms as u64));
                 }
             }
-            destroy_uinput(&mut file);
-            info!("macro '{}' played via uinput ({} steps)", def.name, sequences.len());
+            // Destroy device
+            let fd = file.as_raw_fd();
+            unsafe {
+                let _ = ioctl_int(fd, UI_DEV_DESTROY, 0);
+            }
+            info!(
+                "macro '{}' played via uinput ({} steps)",
+                def.name,
+                sequences.len()
+            );
             Ok(true)
         }
         Err(e) => {
-            for (i, action) in def.actions.iter().enumerate() {
-                info!(
-                    "macro '{}' step {} (stub, no uinput: {}): key={}",
-                    def.name, i, e, action.key
-                );
+            info!(
+                "uinput unavailable ({e}); logging macro '{}' ({} actions)",
+                def.name,
+                def.actions.len()
+            );
+            for a in &def.actions {
+                info!("  → key={} delay_ms={}", a.key, a.delay_ms);
             }
             Ok(false)
         }
     }
 }
 
-fn open_uinput_device(map: &HashMap<&str, u16>) -> Result<std::fs::File, String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open("/dev/uinput")
-        .map_err(|e| format!("open /dev/uinput: {e}"))?;
-
+fn open_uinput(sequences: &[(Vec<u16>, u32)]) -> std::io::Result<std::fs::File> {
+    let file = OpenOptions::new().read(true).write(true).open("/dev/uinput")?;
     let fd = file.as_raw_fd();
+
     unsafe {
-        ioctl_int(fd, UI_SET_EVBIT, EV_KEY as u64).map_err(|e| e.to_string())?;
-        ioctl_int(fd, UI_SET_EVBIT, EV_SYN as u64).map_err(|e| e.to_string())?;
-        for code in map.values() {
-            let _ = ioctl_int(fd, UI_SET_KEYBIT, *code as u64);
+        ioctl_int(fd, UI_SET_EVBIT, EV_KEY as u64)?;
+        ioctl_int(fd, UI_SET_EVBIT, EV_SYN as u64)?;
+        // Enable every key we might emit
+        for (codes, _) in sequences {
+            for &code in codes {
+                ioctl_int(fd, UI_SET_KEYBIT, code as u64)?;
+            }
         }
-        for code in 1u64..256 {
-            let _ = ioctl_int(fd, UI_SET_KEYBIT, code);
+        // Also enable a broad set so future macros work without re-open
+        for code in 1u16..=255 {
+            let _ = ioctl_int(fd, UI_SET_KEYBIT, code as u64);
         }
+    }
 
-        let mut setup: UinputSetup = std::mem::zeroed();
-        setup.id.bustype = BUS_USB;
-        setup.id.vendor = 0x0001;
-        setup.id.product = 0x0001;
-        setup.id.version = 1;
-        let name = b"GearCraft Virtual Keyboard";
-        setup.name[..name.len()].copy_from_slice(name);
+    let mut setup = UinputSetup {
+        id: InputId {
+            bustype: BUS_USB,
+            vendor: 0x0001,
+            product: 0x0001,
+            version: 1,
+        },
+        name: [0u8; 80],
+        ff_effects_max: 0,
+    };
+    let name = b"GearCraft Virtual Keyboard";
+    setup.name[..name.len()].copy_from_slice(name);
 
-        let r = libc::ioctl(fd, UI_DEV_SETUP as _, &setup);
+    unsafe {
+        let r = libc::ioctl(fd, UI_DEV_SETUP as _, &setup as *const _);
         if r < 0 {
-            return Err(format!("UI_DEV_SETUP: {}", std::io::Error::last_os_error()));
+            return Err(std::io::Error::last_os_error());
         }
-        ioctl_int(fd, UI_DEV_CREATE, 0).map_err(|e| format!("UI_DEV_CREATE: {e}"))?;
+        ioctl_int(fd, UI_DEV_CREATE, 0)?;
     }
+    // Give the kernel a moment to register the device
+    thread::sleep(Duration::from_millis(50));
     Ok(file)
-}
-
-fn destroy_uinput(file: &mut std::fs::File) {
-    let fd = file.as_raw_fd();
-    unsafe {
-        let _ = ioctl_int(fd, UI_DEV_DESTROY, 0);
-    }
 }
