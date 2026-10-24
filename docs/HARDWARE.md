@@ -19,6 +19,8 @@ lsusb -d 1038:                    # SteelSeries VID
 ls -l /dev/hidraw*                # should be group plugdev or mode allows you
 
 # 4. Scan only (no IPC server)
+cargo run -p gearcraft-daemon --features hidapi --
+# with:
 GEARCRAFT_SCAN_ONLY=1 cargo run -p gearcraft-daemon --features hidapi
 
 # 5. Run daemon live
@@ -51,7 +53,21 @@ Or use the helper script:
 1. `GEARCRAFT_SCAN_ONLY=1 …` shows the mouse with a path under `/dev/hidraw*`.
 2. Start the daemon with `--features hidapi`.
 3. From the UI **Engine**, set logo / zones to accent `#00E7A0`.
-4. Or via IPC (socket `$XDG_RUNTIME_DIR/gearcraft.sock`).
+4. Or via IPC (socket `$XDG_RUNTIME_DIR/gearcraft.sock`):
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "cmd": {
+    "name": "set_color",
+    "params": {
+      "device_id": "ss-1038-1824-3",
+      "zone": "logo",
+      "color": { "r": 0, "g": 231, "b": 160 }
+    }
+  }
+}
+```
 
 Expected: logo LEDs change; daemon log shows `HID write …`.
 
@@ -80,8 +96,9 @@ Same flow with zone `"all"` / uniform colour report. Per-key RGB is not implemen
 ## Capture for new PIDs
 
 ```bash
+# Install wireshark / usbmon
 sudo modprobe usbmon
-# Record while using vendor tools or rivalcfg, then map reports
+# Record while using the official Windows/mac app in a VM, or rivalcfg on Linux
 ```
 
 Add the PID to `usb::KNOWN_STEELSERIES` and the right family helper in `addons/steelseries/`, then extend [devices.md](devices.md).
