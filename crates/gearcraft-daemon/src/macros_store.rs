@@ -25,7 +25,7 @@ impl MacroStore {
                 s
             }
             _ => {
-                let mut s = Self::new_with_defaults();
+                let s = Self::new_with_defaults();
                 if let Err(e) = s.persist() {
                     warn!("failed to write default macros: {e}");
                 }
