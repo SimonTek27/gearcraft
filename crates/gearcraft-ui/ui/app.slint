@@ -268,21 +268,54 @@ export component App inherits Window {
                                     horizontal-stretch: 1;
                                     vertical-alignment: center;
                                 }
+                                // Progress ring (track + arc) + % center
                                 Rectangle {
-                                    width: 32px;
-                                    height: 32px;
-                                    border-radius: 16px;
-                                    background: #0f1013;
-                                    border-width: 2px;
-                                    border-color: ch.muted ? #3a3b3f : ch.color;
-                                    Rectangle {
-                                        width: 20px * (ch.volume / 100.0);
-                                        height: 20px * (ch.volume / 100.0);
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                        border-radius: self.width / 2;
-                                        background: ch.muted ? #3a3b3f : ch.color;
-                                        opacity: 0.3 + 0.5 * (ch.volume / 100.0);
+                                    width: 34px;
+                                    height: 34px;
+                                    background: transparent;
+
+                                    Path {
+                                        width: 100%;
+                                        height: 100%;
+                                        viewbox-width: 100;
+                                        viewbox-height: 100;
+                                        stroke: #2a2b2f;
+                                        stroke-width: 3.5px;
+                                        fill: transparent;
+                                        MoveTo { x: 50; y: 10; }
+                                        ArcTo {
+                                            radius-x: 40;
+                                            radius-y: 40;
+                                            x: 49.99;
+                                            y: 10;
+                                            large-arc: true;
+                                            sweep: true;
+                                        }
+                                    }
+                                    Path {
+                                        width: 100%;
+                                        height: 100%;
+                                        viewbox-width: 100;
+                                        viewbox-height: 100;
+                                        stroke: ch.muted ? #5a5b5f : ch.color;
+                                        stroke-width: 3.5px;
+                                        fill: transparent;
+                                        private property <float> p: Math.min(0.9999, ch.volume / 100);
+                                        private property <float> r: 40;
+                                        private property <float> cx: 50;
+                                        private property <float> cy: 50;
+                                        MoveTo {
+                                            x: cx;
+                                            y: cy - r;
+                                        }
+                                        ArcTo {
+                                            radius-x: r;
+                                            radius-y: r;
+                                            x: cx + r * Math.sin(p * 360deg);
+                                            y: cy - r * Math.cos(p * 360deg);
+                                            sweep: p > 0;
+                                            large-arc: p > 0.5;
+                                        }
                                     }
                                     Text {
                                         width: parent.width;
@@ -339,11 +372,9 @@ export component App inherits Window {
                                 }
                             }
 
-                            // Vertical fader (real cursor)
                             Rectangle {
                                 height: 160px;
                                 horizontal-stretch: 1;
-
                                 Rectangle {
                                     width: 6px;
                                     height: parent.height - 16px;
@@ -360,7 +391,6 @@ export component App inherits Window {
                                         opacity: 0.4;
                                     }
                                 }
-
                                 TouchArea {
                                     width: parent.width;
                                     height: parent.height;
@@ -454,7 +484,6 @@ export component App inherits Window {
                         }
                         HorizontalBox {
                             spacing: 8px;
-                            vertical-stretch: 1;
                             ScrollView {
                                 horizontal-stretch: 1;
                                 VerticalBox {
@@ -465,10 +494,6 @@ export component App inherits Window {
                                             text: p.name + (p.eq-enabled ? "  · EQ" : "");
                                             color: p.id == root.active-preset-id ? #00e7a0 : #ffffff;
                                             font-size: 12px; vertical-alignment: center; horizontal-stretch: 1;
-                                        }
-                                        Text {
-                                            text: p.notes; color: #5a5b5f; font-size: 10px;
-                                            overflow: elide; width: 160px; vertical-alignment: center;
                                         }
                                         Button {
                                             text: "Carica";
@@ -481,9 +506,8 @@ export component App inherits Window {
                             }
                             VerticalBox {
                                 width: 180px; spacing: 6px;
-                                Text { text: "Salva preset corrente"; color: #8b8d91; font-size: 10px; }
-                                Button { text: "Salva come «Custom»"; clicked => { root.save-preset("Custom"); } }
-                                Button { text: "Salva come «Session»"; clicked => { root.save-preset("Session"); } }
+                                Button { text: "Salva «Custom»"; clicked => { root.save-preset("Custom"); } }
+                                Button { text: "Salva «Session»"; clicked => { root.save-preset("Session"); } }
                             }
                         }
                     }
