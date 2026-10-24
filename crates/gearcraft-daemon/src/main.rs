@@ -1,6 +1,7 @@
 //! GearCraft daemon – background service for USB peripherals and IPC.
 
 mod addons;
+mod app_routing;
 mod audio_presets;
 mod chatmix_pw;
 mod dsp_pw;
@@ -49,7 +50,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         settings.chatmix.balance, settings.chatmix.game_volume, settings.chatmix.chat_volume
     );
 
-    // Re-apply last ChatMix volumes if sinks are ready
     if backend.available {
         let g = settings.chatmix.game_volume;
         let c = settings.chatmix.chat_volume;
@@ -75,6 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     let reg_scan = Arc::clone(&state.registry);
+    // Auto-route apps → Sonar channels (Discord→chat, Haruna→media, …)
+    tokio::spawn(async move {
+        app_routing::run_loop(2).await;
+    });
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
         loop {
