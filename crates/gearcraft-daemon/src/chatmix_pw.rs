@@ -17,7 +17,7 @@
 use std::process::Stdio;
 
 use tokio::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone)]
 pub struct AudioBackendInfo {
@@ -120,6 +120,7 @@ async fn detect_wpctl() -> AudioBackendInfo {
 /// Parse `wpctl status` lines like `    56. GearCraft_Game ...`
 fn find_wpctl_id(status: &str, preferred: &str, names: &[&str]) -> Option<String> {
     if !preferred.is_empty() {
+        // numeric id or name substring
         if preferred.chars().all(|c| c.is_ascii_digit()) {
             return Some(preferred.to_string());
         }
@@ -144,6 +145,7 @@ fn find_wpctl_id(status: &str, preferred: &str, names: &[&str]) -> Option<String
 }
 
 fn extract_wpctl_id(line: &str) -> Option<String> {
+    // " │  56. Something"
     let t = line.trim().trim_start_matches('│').trim();
     let num: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
     if num.is_empty() {
@@ -207,6 +209,7 @@ pub async fn apply_volumes(game_pct: u8, chat_pct: u8) -> Result<AudioBackendInf
         "wpctl" => {
             let g = info.game_sink.as_deref().unwrap();
             let c = info.chat_sink.as_deref().unwrap();
+            // wpctl uses fraction 0.0–1.0+
             let gv = format!("{:.2}", game_pct as f32 / 100.0);
             let cv = format!("{:.2}", chat_pct as f32 / 100.0);
             run_out("wpctl", &["set-volume", g, &gv]).await?;
@@ -263,6 +266,7 @@ pub async fn setup_virtual_sinks() -> Result<String, String> {
         info!("created null sink {name}");
     }
 
+    // Optional loopbacks so you can hear the mix on the default sink
     if std::env::var("GEARCRAFT_CHATMIX_LOOPBACK").as_deref() == Ok("1") {
         for name in ["gearcraft_game", "gearcraft_chat"] {
             let _ = run_out(
