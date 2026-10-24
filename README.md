@@ -5,7 +5,7 @@
 GearCraft is a brand-agnostic desktop stack: a background daemon talks to USB/HID devices through plugins, and a modern UI lets you manage them. New brands are added as addons; software features (ChatMix, macros, profiles) work across devices.
 
 **License**: [GPL-3.0-or-later](LICENSE)  
-**UI**: Tauri 2 + Svelte 5 + Tailwind  
+**UI**: Slint (Rust native)  
 **Daemon**: hidapi + Unix socket IPC  
 **Design**: dark theme, accent `#00E7A0`
 
@@ -29,10 +29,9 @@ gearcraft/
 ├── crates/
 │   ├── gearcraft-core/        # types + PeripheralAddon trait + IPC messages
 │   ├── gearcraft-daemon/      # background service + brand addons
-│   └── gearcraft-ui/          # Tauri frontend
+│   └── gearcraft-ui/          # Slint desktop UI
 ├── docs/
 │   ├── devices.md             # device matrix by category
-│   ├── CONFIG.md              # XDG config persistence
 │   └── CHATMIX.md
 └── packaging/                 # systemd, deb, install scripts
 ```
@@ -53,10 +52,10 @@ Listens on `$XDG_RUNTIME_DIR/gearcraft.sock` (or `/tmp/gearcraft.sock`).
 ```bash
 cd crates/gearcraft-ui
 npm install
-npm run tauri dev
+cargo run -p gearcraft-ui
 ```
 
-Requires a working Tauri 2 toolchain (Rust ≥ 1.77 recommended, system webkit2gtk, etc.).
+Requires a working Slint stack (Rust, system libs for the Slint backend — e.g. libxcb on X11).
 
 ## Status
 
@@ -91,10 +90,6 @@ sudo dpkg -i packaging/gearcraft-daemon_*.deb
 ## ChatMix (PipeWire)
 
 See [docs/CHATMIX.md](docs/CHATMIX.md). In the UI: **Sonar → Setup Game/Chat sinks**, then move the balance slider.
-
-## Config
-
-Macros and ChatMix preferences live under `~/.config/gearcraft/`. See [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Contributing devices
 
