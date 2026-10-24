@@ -135,6 +135,7 @@ pub struct SharedState {
     pub registry: Arc<RwLock<DeviceRegistry>>,
     pub macros: Arc<RwLock<MacroStore>>,
     pub chatmix: Arc<RwLock<ChatMixState>>,
+    pub audio_presets: Arc<RwLock<crate::audio_presets::AudioPresetStore>>,
 }
 
 pub async fn run_server(
@@ -157,11 +158,13 @@ pub async fn run_server(
                 let registry = Arc::clone(&state.registry);
                 let macros = Arc::clone(&state.macros);
                 let chatmix = Arc::clone(&state.chatmix);
+                let audio_presets = Arc::clone(&state.audio_presets);
                 tokio::spawn(async move {
                     let st = SharedState {
                         registry,
                         macros,
                         chatmix,
+                        audio_presets,
                     };
                     if let Err(e) = handle_client(stream, st).await {
                         warn!("client handler error: {e}");
@@ -404,6 +407,73 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
                         }),
                     )
                 }
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::ListAudioPresets => {
+            let store = state.audio_presets.read().await;
+            IpcResponse::success(id, store.list())
+        }
+
+        IpcCommand::LoadAudioPreset { preset_id } => {
+            let preset = {
+                let store = state.audio_presets.read().await;
+                store.get(&preset_id).cloned()
+            };
+            match preset {
+                Some(p) => {
+                    if let Some(ref cm) = p.chatmix {
+                        let mut c = state.chatmix.write().await;
+                        *c = cm.clone();
+                    }
+                    match crate::audio_presets::apply_preset_runtime(&p).await {
+                        Ok(data) => IpcResponse::success(id, data),
+                        Err(e) => IpcResponse::failure(id, e),
+                    }
+                }
+                None => IpcResponse::failure(id, format!("preset not found: {preset_id}")),
+            }
+        }
+
+        IpcCommand::SaveAudioPreset { preset } => {
+            let mut store = state.audio_presets.write().await;
+            match store.save(preset) {
+                Ok(()) => IpcResponse::success(id, serde_json::json!({ "saved": true })),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::DeleteAudioPreset { preset_id } => {
+            let mut store = state.audio_presets.write().await;
+            match store.delete(&preset_id) {
+                Ok(true) => IpcResponse::success(id, serde_json::json!({ "deleted": true })),
+                Ok(false) => IpcResponse::failure(id, format!("preset not found: {preset_id}")),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::ListPresetRules => {
+            let store = state.audio_presets.read().await;
+            IpcResponse::success(id, store.list_rules())
+        }
+
+        IpcCommand::SetPresetRule { rule } => {
+            let mut store = state.audio_presets.write().await;
+            match store.set_rule(rule) {
+                Ok(()) => IpcResponse::success(id, serde_json::json!({ "ok": true })),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::DeletePresetRule {
+            device_id,
+            route_id,
+        } => {
+            let mut store = state.audio_presets.write().await;
+            match store.delete_rule(&device_id, &route_id) {
+                Ok(true) => IpcResponse::success(id, serde_json::json!({ "deleted": true })),
+                Ok(false) => IpcResponse::failure(id, "rule not found"),
                 Err(e) => IpcResponse::failure(id, e),
             }
         }
