@@ -5,7 +5,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use gearcraft_core::{
-    default_socket_path, IpcCommand, IpcRequest, IpcResponse, RgbColor,
+    default_socket_path, AudioPreset, IpcCommand, IpcRequest, IpcResponse, PresetRule,
+    RgbColor,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -105,4 +106,39 @@ pub fn set_chatmix(balance: i8) -> Result<Value, IpcError> {
 
 pub fn setup_chatmix() -> Result<Value, IpcError> {
     request(IpcCommand::SetupChatMix)
+}
+
+pub fn list_audio_presets() -> Result<Value, IpcError> {
+    request(IpcCommand::ListAudioPresets)
+}
+
+pub fn load_audio_preset(preset_id: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::LoadAudioPreset {
+        preset_id: preset_id.to_string(),
+    })
+}
+
+pub fn save_audio_preset(preset: AudioPreset) -> Result<Value, IpcError> {
+    request(IpcCommand::SaveAudioPreset { preset })
+}
+
+pub fn delete_audio_preset(preset_id: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::DeleteAudioPreset {
+        preset_id: preset_id.to_string(),
+    })
+}
+
+pub fn list_preset_rules() -> Result<Value, IpcError> {
+    request(IpcCommand::ListPresetRules)
+}
+
+pub fn set_preset_rule(rule: PresetRule) -> Result<Value, IpcError> {
+    request(IpcCommand::SetPresetRule { rule })
+}
+
+pub fn delete_preset_rule(device_id: &str, route_id: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::DeletePresetRule {
+        device_id: device_id.to_string(),
+        route_id: route_id.to_string(),
+    })
 }
