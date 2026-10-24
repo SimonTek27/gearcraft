@@ -28,13 +28,55 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 ## Phase 2 — UX features ✅
 
-- [x] Software ChatMix (PipeWire null sinks + balance)
-- [x] Macro store + uinput playback
-- [x] Config persistence under XDG
+- [x] Home → live device list from daemon
+- [x] Engine → colour picker + zone apply (`set_color`)
+- [x] Macros store + Engine UI (add / test / delete) — execution stub
+- [x] Sonar → headset battery display
+- [x] ChatMix software + **PipeWire/Pulse** volume apply (`docs/CHATMIX.md`)
 
-## Phase 3 — Harden & ship (next)
+## Phase 3 — Input & audio depth 🔄
 
-- [ ] Live hardware validation on user machines
-- [ ] AUR package
-- [ ] Broader device matrix
-- [ ] Profile export/import
+- [x] **uinput** real macro playback + optional key grab
+- [x] Persist macros + ChatMix to disk (`~/.config/gearcraft/`)
+- [ ] WirePlumber static routes / session profiles for ChatMix
+- [ ] Hardware ChatMix dial read when available
+
+## Phase 4 — Hardware completeness
+
+- [x] Hardware test harness (`docs/HARDWARE.md`, `packaging/hw-test.sh`, `GEARCRAFT_SCAN_ONLY`)
+- [ ] Live validation matrix filled on real mice / keyboards / headsets
+- [ ] Per-key / multi-zone keyboard RGB from open captures
+- [x] Live battery HID read path (Arctis write+read; validate on hardware)
+- [ ] Hotplug via udev monitor (replace periodic rescan)
+
+## Phase 5 — More brands (plugin model)
+
+- [ ] Razer addon skeleton
+- [ ] Logitech (Lightspeed / G HUB subset)
+- [ ] Corsair / iCUE-compatible subset
+- [ ] Addon discovery API for third-party plugins
+
+## Phase 6 — Distribution
+
+- [ ] AUR package (`gearcraft-daemon`, `gearcraft-ui`)
+- [ ] Flathub / AppImage for UI
+- [ ] COPR / OBS builds
+- [ ] Signed releases + changelog automation
+
+## Phase 7 — Polish
+
+- [ ] Profiles (per-game) and auto-switch
+- [ ] Onboarding wizard (udev, sinks, permissions)
+- [ ] Accessibility & localization
+- [ ] CI: `cargo test`, UI typecheck, packaging dry-run
+
+---
+
+## Near-term priority (next 2–4 weeks)
+
+1. Hardware validation on real devices (`--features hidapi`)  
+2. First AUR publish  
+3. WirePlumber static ChatMix routes  
+4. Per-device colour profile persistence  
+
+Contributions welcome — open an issue for device capture logs (Wireshark/USBPcap) or PipeWire routing tips.
