@@ -4,12 +4,15 @@
 //! (via hidapi when available, otherwise an empty list / demo mode).
 
 use gearcraft_core::{DeviceInfo, DeviceKind};
+#[allow(unused_imports)]
 use tracing::{debug, info, warn};
 
 /// SteelSeries USB vendor ID
 pub const VID_STEELSERIES: u16 = 0x1038;
 
 /// Known SteelSeries product IDs we care about (expand over time).
+/// Used by live HID scan (`feature = "hidapi"`).
+#[cfg_attr(not(feature = "hidapi"), allow(dead_code))]
 pub const KNOWN_STEELSERIES: &[(u16, &str, DeviceKind)] = &[
     // Mice – Rival 3 family
     (0x1824, "Rival 3", DeviceKind::Mouse),
@@ -78,6 +81,8 @@ pub fn scan_devices() -> Vec<DeviceInfo> {
 
 #[cfg(feature = "hidapi")]
 fn preferred_interface(kind: &DeviceKind, iface: i32) -> i32 {
+    // rivalcfg uses interface 3 for Rival 3 control; prefer higher iface for mice.
+    // For other devices keep the reported interface as a score.
     match kind {
         DeviceKind::Mouse if iface >= 0 => iface,
         _ => iface.max(0),
@@ -90,6 +95,7 @@ fn scan_with_hidapi() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Sen
     use std::collections::HashMap;
 
     let api = HidApi::new()?;
+    // Collect all interfaces per (vid,pid), then pick the best one.
     let mut best: HashMap<(u16, u16), (i32, DeviceInfo)> = HashMap::new();
 
     for device in api.device_list() {
@@ -148,6 +154,8 @@ fn scan_with_hidapi() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Sen
 }
 
 /// Open a HID device by path and write an output report.
+/// Report data should **not** include the report-ID leading zero if the
+/// device uses report ID 0; callers decide the payload layout.
 #[cfg(feature = "hidapi")]
 pub fn write_output_report(
     path: &str,
@@ -157,6 +165,7 @@ pub fn write_output_report(
 
     let api = HidApi::new()?;
     let device = api.open_path(std::ffi::CString::new(path)?.as_c_str())?;
+    // hidapi write: first byte is report ID (0x00 for most SteelSeries mice)
     let mut buf = Vec::with_capacity(data.len() + 1);
     buf.push(0x00);
     buf.extend_from_slice(data);
@@ -174,7 +183,7 @@ pub fn write_output_report(
     Ok(())
 }
 
-/// Write an output report then try to read a response (battery / status).
+/// Write an output report then try to read a response (for battery / status queries).
 #[cfg(feature = "hidapi")]
 pub fn write_then_read(
     path: &str,
@@ -207,6 +216,7 @@ pub fn write_then_read(
     _timeout_ms: i32,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     debug!("write_then_read (stub): {:02x?}", data);
+    // Demo battery-like response for Arctis query
     if data == [0x06, 0x18] {
         return Ok(vec![0x06, 0x18, 78]);
     }
