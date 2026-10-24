@@ -5,3 +5,4 @@
 **/.DS_Store
 *.deb
 Cargo.lock
+gearcraft/crates/gearcraft-ui/src-tauri/target
