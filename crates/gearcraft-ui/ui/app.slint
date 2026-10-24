@@ -21,6 +21,13 @@ export struct ChannelRow {
     device: string,
 }
 
+export struct PresetRow {
+    id: string,
+    name: string,
+    notes: string,
+    eq-enabled: bool,
+}
+
 export component App inherits Window {
     title: "GearCraft";
     preferred-width: 1100px;
@@ -29,8 +36,7 @@ export component App inherits Window {
     min-height: 600px;
     background: #0f1013;
 
-    // ---- state (set from Rust) ----
-    in-out property <int> page: 0; // 0 Home, 1 Engine, 2 Sonar
+    in-out property <int> page: 0;
     in-out property <string> status-text: "Connecting…";
     in-out property <bool> daemon-online: false;
     in-out property <[DeviceRow]> devices: [];
@@ -45,18 +51,21 @@ export component App inherits Window {
     in-out property <int> chat-volume: 100;
     in-out property <string> chatmix-backend: "—";
     in-out property <bool> chatmix-ready: false;
-    in-out property <bool> streamer-mode: false;
+    in-out property <bool> streamer-mode: true;
     in-out property <bool> sonar-enabled: true;
+    in-out property <[PresetRow]> presets: [];
+    in-out property <string> active-preset-id: "";
+    in-out property <string> active-preset-name: "—";
+    in-out property <string> preset-name-input: "";
     in-out property <[ChannelRow]> channels: [
-        { id: "master", label: "MASTER", color: "#8b8d91", volume: 100, muted: false, solo: false, device: "System" },
+        { id: "master", label: "PRINCIPALE", color: "#8b8d91", volume: 100, muted: false, solo: false, device: "System" },
         { id: "game", label: "GAME", color: "#00e7a0", volume: 100, muted: false, solo: false, device: "GearCraft_Game" },
         { id: "chat", label: "CHAT", color: "#3b9eff", volume: 100, muted: false, solo: false, device: "GearCraft_Chat" },
         { id: "media", label: "MEDIA", color: "#e84d8a", volume: 100, muted: false, solo: false, device: "Default" },
         { id: "aux", label: "AUX", color: "#a78bfa", volume: 100, muted: false, solo: false, device: "Default" },
-        { id: "mic", label: "MIC", color: "#f5a524", volume: 100, muted: false, solo: false, device: "Input" },
+        { id: "mic", label: "MICROFON", color: "#f5a524", volume: 100, muted: false, solo: false, device: "Input" },
     ];
 
-    // ---- callbacks → Rust ----
     callback refresh-devices();
     callback select-device(string);
     callback apply-color();
@@ -67,80 +76,44 @@ export component App inherits Window {
     callback channel-solo(string);
     callback toggle-streamer();
     callback toggle-sonar();
+    callback refresh-presets();
+    callback load-preset(string);
+    callback save-preset(string);
+    callback delete-preset(string);
 
     HorizontalBox {
         padding: 0;
         spacing: 0;
 
-        // Sidebar
         Rectangle {
             width: 200px;
             background: #141518;
-
             VerticalBox {
                 padding: 16px;
                 spacing: 8px;
-
-                Text {
-                    text: "GearCraft";
-                    color: #00e7a0;
-                    font-size: 18px;
-                    font-weight: 700;
-                }
+                Text { text: "GearCraft"; color: #00e7a0; font-size: 18px; font-weight: 700; }
                 Text {
                     text: root.status-text;
                     color: root.daemon-online ? #00e7a0 : #8b8d91;
                     font-size: 11px;
                 }
-
                 Rectangle { height: 12px; background: transparent; }
-
-                nav-btn := Button {
-                    text: "Home";
-                    primary: root.page == 0;
-                    clicked => { root.page = 0; }
-                }
-                Button {
-                    text: "Engine";
-                    primary: root.page == 1;
-                    clicked => { root.page = 1; }
-                }
-                Button {
-                    text: "Sonar";
-                    primary: root.page == 2;
-                    clicked => { root.page = 2; }
-                }
-
+                Button { text: "Home"; primary: root.page == 0; clicked => { root.page = 0; } }
+                Button { text: "Engine"; primary: root.page == 1; clicked => { root.page = 1; } }
+                Button { text: "Sonar"; primary: root.page == 2; clicked => { root.page = 2; } }
                 Rectangle { height: 1px; background: #2a2b2f; }
-
-                Button {
-                    text: "Refresh";
-                    clicked => { root.refresh-devices(); }
-                }
+                Button { text: "Refresh"; clicked => { root.refresh-devices(); } }
             }
         }
 
-        // Content
         Rectangle {
             background: #0f1013;
 
-            // HOME
             if root.page == 0: VerticalBox {
                 padding: 24px;
                 spacing: 12px;
-
-                Text {
-                    text: "Devices";
-                    color: #ffffff;
-                    font-size: 22px;
-                    font-weight: 700;
-                }
-                Text {
-                    text: "Peripherals discovered by the daemon.";
-                    color: #8b8d91;
-                    font-size: 12px;
-                }
-
+                Text { text: "Devices"; color: #ffffff; font-size: 22px; font-weight: 700; }
+                Text { text: "Peripherals discovered by the daemon."; color: #8b8d91; font-size: 12px; }
                 ScrollView {
                     vertical-stretch: 1;
                     VerticalBox {
@@ -151,33 +124,21 @@ export component App inherits Window {
                             border-radius: 10px;
                             border-width: 1px;
                             border-color: dev.id == root.selected-device-id ? #00e7a0 : #2a2b2f;
-
                             TouchArea {
                                 clicked => { root.select-device(dev.id); }
                                 HorizontalBox {
                                     padding: 12px;
                                     spacing: 12px;
-                                    alignment: start;
-
                                     Rectangle {
-                                        width: 8px;
-                                        height: 8px;
-                                        y: 10px;
-                                        border-radius: 4px;
+                                        width: 8px; height: 8px; y: 10px; border-radius: 4px;
                                         background: dev.online ? #00e7a0 : #5a5b5f;
                                     }
                                     VerticalBox {
                                         spacing: 2px;
-                                        Text {
-                                            text: dev.name;
-                                            color: #ffffff;
-                                            font-size: 14px;
-                                            font-weight: 600;
-                                        }
+                                        Text { text: dev.name; color: #ffffff; font-size: 14px; font-weight: 600; }
                                         Text {
                                             text: dev.vendor + " · " + dev.kind + " · " + dev.detail;
-                                            color: #8b8d91;
-                                            font-size: 11px;
+                                            color: #8b8d91; font-size: 11px;
                                         }
                                     }
                                 }
@@ -191,212 +152,225 @@ export component App inherits Window {
                 }
             }
 
-            // ENGINE
             if root.page == 1: VerticalBox {
                 padding: 24px;
                 spacing: 16px;
-
-                Text {
-                    text: "Engine";
-                    color: #ffffff;
-                    font-size: 22px;
-                    font-weight: 700;
-                }
+                Text { text: "Engine"; color: #ffffff; font-size: 22px; font-weight: 700; }
                 Text {
                     text: "RGB · selected: " + root.selected-device-name;
-                    color: #8b8d91;
-                    font-size: 12px;
+                    color: #8b8d91; font-size: 12px;
                 }
-
                 HorizontalBox {
                     spacing: 24px;
-
-                    // Color preview
                     Rectangle {
-                        width: 120px;
-                        height: 120px;
-                        border-radius: 12px;
-                        border-width: 1px;
-                        border-color: #2a2b2f;
-                        background: rgb(
-                            root.color-r * 255,
-                            root.color-g * 255,
-                            root.color-b * 255
-                        );
+                        width: 120px; height: 120px; border-radius: 12px;
+                        border-width: 1px; border-color: #2a2b2f;
+                        background: rgb(root.color-r * 255, root.color-g * 255, root.color-b * 255);
                     }
-
                     VerticalBox {
                         spacing: 8px;
                         Text { text: "Red"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-r;
-                            changed(v) => { root.color-r = v; }
-                        }
+                        Slider { minimum: 0; maximum: 1; value: root.color-r; changed(v) => { root.color-r = v; } }
                         Text { text: "Green"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-g;
-                            changed(v) => { root.color-g = v; }
-                        }
+                        Slider { minimum: 0; maximum: 1; value: root.color-g; changed(v) => { root.color-g = v; } }
                         Text { text: "Blue"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-b;
-                            changed(v) => { root.color-b = v; }
-                        }
-
+                        Slider { minimum: 0; maximum: 1; value: root.color-b; changed(v) => { root.color-b = v; } }
                         HorizontalBox {
                             spacing: 8px;
-                            Button {
-                                text: "Logo";
-                                primary: root.color-zone == "logo";
-                                clicked => { root.color-zone = "logo"; }
-                            }
-                            Button {
-                                text: "All";
-                                primary: root.color-zone == "all";
-                                clicked => { root.color-zone = "all"; }
-                            }
-                            Button {
-                                text: "Apply colour";
-                                primary: true;
-                                clicked => { root.apply-color(); }
-                            }
+                            Button { text: "Logo"; primary: root.color-zone == "logo"; clicked => { root.color-zone = "logo"; } }
+                            Button { text: "All"; primary: root.color-zone == "all"; clicked => { root.color-zone = "all"; } }
+                            Button { text: "Apply colour"; primary: true; clicked => { root.apply-color(); } }
                         }
                     }
                 }
             }
 
-            // SONAR
+            // SONAR — mixer always visible; streamer mode adds dual path above the fader
             if root.page == 2: VerticalBox {
                 padding: 16px;
                 spacing: 10px;
 
                 HorizontalBox {
+                    Text { text: "Sonar"; color: #ffffff; font-size: 22px; font-weight: 700; }
                     Text {
-                        text: "Sonar";
-                        color: #ffffff;
-                        font-size: 22px;
-                        font-weight: 700;
+                        text: root.streamer-mode ? "  ·  Modalità streamer" : "";
+                        color: #8b8d91; font-size: 13px; vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
                     Text {
                         text: root.chatmix-backend + (root.chatmix-ready ? " · ready" : " · not linked");
                         color: root.chatmix-ready ? #00e7a0 : #8b8d91;
-                        font-size: 11px;
-                        vertical-alignment: center;
+                        font-size: 11px; vertical-alignment: center;
                     }
                     Button {
-                        text: "Setup sinks";
-                        clicked => { root.setup-chatmix(); }
+                        text: root.streamer-mode ? "Streamer: ON" : "Streamer: OFF";
+                        primary: root.streamer-mode;
+                        clicked => { root.toggle-streamer(); }
                     }
+                    Button {
+                        text: root.sonar-enabled ? "Spegni Sonar" : "Accendi Sonar";
+                        clicked => { root.toggle-sonar(); }
+                    }
+                    Button { text: "Setup sinks"; clicked => { root.setup-chatmix(); } }
                 }
 
                 HorizontalBox {
-                    spacing: 10px;
+                    spacing: 8px;
                     vertical-stretch: 1;
-
-                    // Channel strips
                     for ch in root.channels: Rectangle {
                         border-radius: 10px;
                         border-width: 1px;
                         border-color: #2a2b2f;
                         background: #1a1b1e;
                         opacity: root.sonar-enabled ? 1.0 : 0.45;
-
                         VerticalBox {
                             padding: 8px;
                             spacing: 6px;
-
                             Text {
-                                text: ch.label;
-                                color: ch.color;
-                                font-size: 11px;
-                                font-weight: 700;
+                                text: ch.label; color: ch.color; font-size: 11px; font-weight: 700;
                                 horizontal-alignment: center;
                             }
                             Text {
-                                text: ch.device;
-                                color: #8b8d91;
-                                font-size: 9px;
+                                text: "Custom"; color: #8b8d91; font-size: 10px;
                                 horizontal-alignment: center;
-                                overflow: elide;
                             }
-
-                            Rectangle { vertical-stretch: 1; background: transparent; }
-
+                            if root.streamer-mode: HorizontalBox {
+                                spacing: 10px;
+                                alignment: center;
+                                height: 100px;
+                                VerticalBox {
+                                    spacing: 4px; alignment: center;
+                                    Text { text: "🎧"; font-size: 12px; horizontal-alignment: center; }
+                                    Rectangle {
+                                        width: 8px; height: 8px; border-radius: 4px;
+                                        background: ch.muted ? #5a5b5f : #00e7a0;
+                                    }
+                                    Rectangle {
+                                        width: 16px; vertical-stretch: 1; border-radius: 4px; background: #0f1013;
+                                        Rectangle {
+                                            width: parent.width;
+                                            height: parent.height * (ch.volume / 100);
+                                            y: parent.height - self.height;
+                                            border-radius: 4px;
+                                            background: ch.muted ? #3a3b3f : ch.color;
+                                        }
+                                    }
+                                }
+                                VerticalBox {
+                                    spacing: 4px; alignment: center;
+                                    Text { text: "📡"; font-size: 12px; horizontal-alignment: center; }
+                                    Rectangle {
+                                        width: 8px; height: 8px; border-radius: 4px;
+                                        background: ch.solo ? #00e7a0 : #5a5b5f;
+                                    }
+                                    Rectangle {
+                                        width: 16px; vertical-stretch: 1; border-radius: 4px; background: #0f1013;
+                                        Rectangle {
+                                            width: parent.width;
+                                            height: parent.height * (ch.volume / 100);
+                                            y: parent.height - self.height;
+                                            border-radius: 4px;
+                                            background: ch.muted ? #3a3b3f : ch.color;
+                                        }
+                                    }
+                                }
+                            }
+                            if !root.streamer-mode: Rectangle {
+                                height: 80px;
+                                HorizontalBox {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 20px; height: 80px; border-radius: 4px; background: #0f1013;
+                                        Rectangle {
+                                            width: parent.width;
+                                            height: parent.height * (ch.volume / 100);
+                                            y: parent.height - self.height;
+                                            border-radius: 4px;
+                                            background: ch.muted ? #3a3b3f : ch.color;
+                                        }
+                                    }
+                                }
+                            }
                             Text {
                                 text: ch.muted ? "MUTE" : ch.volume + "%";
-                                color: #ffffff;
-                                font-size: 12px;
-                                font-family: "monospace";
+                                color: #ffffff; font-size: 12px; font-family: "monospace";
                                 horizontal-alignment: center;
                             }
-
                             Slider {
-                                minimum: 0;
-                                maximum: 100;
-                                value: ch.volume;
+                                minimum: 0; maximum: 100; value: ch.volume;
                                 enabled: root.sonar-enabled;
-                                changed(v) => {
-                                    root.channel-volume(ch.id, v);
-                                }
+                                changed(v) => { root.channel-volume(ch.id, v); }
                             }
-
                             HorizontalBox {
-                                spacing: 4px;
-                                alignment: center;
-                                Button {
-                                    text: "M";
-                                    primary: ch.muted;
-                                    clicked => { root.channel-mute(ch.id); }
-                                }
-                                Button {
-                                    text: "S";
-                                    primary: ch.solo;
-                                    clicked => { root.channel-solo(ch.id); }
+                                spacing: 4px; alignment: center;
+                                Button { text: "M"; primary: ch.muted; clicked => { root.channel-mute(ch.id); } }
+                                Button { text: "S"; primary: ch.solo; clicked => { root.channel-solo(ch.id); } }
+                            }
+                            Rectangle {
+                                height: 40px; border-radius: 6px; border-width: 1px;
+                                border-color: #2a2b2f; background: #121316;
+                                VerticalBox {
+                                    padding: 6px; spacing: 2px;
+                                    Text { text: "App"; color: #5a5b5f; font-size: 9px; }
+                                    Text { text: ch.device; color: #8b8d91; font-size: 9px; overflow: elide; }
                                 }
                             }
                         }
                     }
+                }
 
-                    // Side controls
-                    Rectangle {
-                        width: 170px;
-                        border-radius: 10px;
-                        border-width: 1px;
-                        border-color: #2a2b2f;
-                        background: #1a1b1e;
-
-                        VerticalBox {
-                            padding: 12px;
-                            spacing: 12px;
-
+                // PRESET AUDIO
+                Rectangle {
+                    height: 130px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px 12px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "PRESET AUDIO"; color: #8b8d91; font-size: 11px; font-weight: 700; }
                             Text {
-                                text: "CONTROLLI";
-                                color: #8b8d91;
-                                font-size: 10px;
-                                font-weight: 700;
+                                text: "  attivo: " + root.active-preset-name;
+                                color: #00e7a0; font-size: 11px;
                             }
-
-                            Button {
-                                text: root.streamer-mode ? "Streamer: ON" : "Streamer: OFF";
-                                clicked => { root.toggle-streamer(); }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button { text: "Aggiorna"; clicked => { root.refresh-presets(); } }
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            vertical-stretch: 1;
+                            ScrollView {
+                                horizontal-stretch: 1;
+                                VerticalBox {
+                                    spacing: 4px;
+                                    for p in root.presets: HorizontalBox {
+                                        spacing: 8px;
+                                        Text {
+                                            text: p.name + (p.eq-enabled ? "  · EQ" : "");
+                                            color: p.id == root.active-preset-id ? #00e7a0 : #ffffff;
+                                            font-size: 12px; vertical-alignment: center; horizontal-stretch: 1;
+                                        }
+                                        Text {
+                                            text: p.notes; color: #5a5b5f; font-size: 10px;
+                                            overflow: elide; width: 160px; vertical-alignment: center;
+                                        }
+                                        Button {
+                                            text: "Carica";
+                                            primary: p.id == root.active-preset-id;
+                                            clicked => { root.load-preset(p.id); }
+                                        }
+                                        Button { text: "Elimina"; clicked => { root.delete-preset(p.id); } }
+                                    }
+                                }
                             }
-
-                            Button {
-                                text: root.sonar-enabled ? "Spegni Sonar" : "Accendi Sonar";
-                                clicked => { root.toggle-sonar(); }
-                            }
-
-                            Text {
-                                text: "M mute · S solo";
-                                color: #5a5b5f;
-                                font-size: 10px;
+                            VerticalBox {
+                                width: 180px; spacing: 6px;
+                                Text { text: "Salva preset corrente"; color: #8b8d91; font-size: 10px; }
+                                Button { text: "Salva come «Custom»"; clicked => { root.save-preset("Custom"); } }
+                                Button { text: "Salva come «Session»"; clicked => { root.save-preset("Session"); } }
+                                Text { text: "Include ChatMix attuale"; color: #5a5b5f; font-size: 9px; }
                             }
                         }
                     }
@@ -410,33 +384,22 @@ export component App inherits Window {
                     border-color: #2a2b2f;
                     background: #1a1b1e;
                     opacity: root.sonar-enabled ? 1.0 : 0.45;
-
                     VerticalBox {
                         padding: 10px 16px;
                         spacing: 4px;
-
                         HorizontalBox {
-                            Text {
-                                text: "CHATMIX";
-                                color: #8b8d91;
-                                font-size: 11px;
-                                font-weight: 700;
-                            }
+                            Text { text: "CHATMIX"; color: #8b8d91; font-size: 11px; font-weight: 700; }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
                             Text {
                                 text: root.chatmix-balance;
-                                color: #ffffff;
-                                font-size: 11px;
-                                font-family: "monospace";
+                                color: #ffffff; font-size: 11px; font-family: "monospace";
                             }
                         }
                         HorizontalBox {
                             spacing: 10px;
                             Text { text: "Game"; color: #00e7a0; font-size: 11px; vertical-alignment: center; }
                             Slider {
-                                horizontal-stretch: 1;
-                                minimum: -100;
-                                maximum: 100;
+                                horizontal-stretch: 1; minimum: -100; maximum: 100;
                                 value: root.chatmix-balance;
                                 enabled: root.sonar-enabled;
                                 changed(v) => { root.set-chatmix(v); }
@@ -444,17 +407,9 @@ export component App inherits Window {
                             Text { text: "Chat"; color: #3b9eff; font-size: 11px; vertical-alignment: center; }
                         }
                         HorizontalBox {
-                            Text {
-                                text: "Game " + root.game-volume + "%";
-                                color: #8b8d91;
-                                font-size: 10px;
-                            }
+                            Text { text: "Game " + root.game-volume + "%"; color: #8b8d91; font-size: 10px; }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Text {
-                                text: "Chat " + root.chat-volume + "%";
-                                color: #8b8d91;
-                                font-size: 10px;
-                            }
+                            Text { text: "Chat " + root.chat-volume + "%"; color: #8b8d91; font-size: 10px; }
                         }
                     }
                 }
