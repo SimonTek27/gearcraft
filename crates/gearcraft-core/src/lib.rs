@@ -73,7 +73,6 @@ pub trait PeripheralAddon: Send + Sync {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Macros & ChatMix
 // ---------------------------------------------------------------------------
@@ -121,6 +120,107 @@ impl Default for ChatMixState {
             chat_volume: 100,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Audio presets (JDSP4Linux-style — GearCraft aims to replace JamesDSP)
+// ---------------------------------------------------------------------------
+
+/// One graphic-EQ band (Hz + gain dB).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EqBand {
+    pub freq_hz: f32,
+    /// Gain in dB, typically −12…+12
+    pub gain_db: f32,
+}
+
+fn default_eq_bands() -> Vec<EqBand> {
+    [31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
+        .into_iter()
+        .map(|freq_hz| EqBand {
+            freq_hz,
+            gain_db: 0.0,
+        })
+        .collect()
+}
+
+/// Effect toggles / parameters stored with a preset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioEffects {
+    #[serde(default)]
+    pub eq_enabled: bool,
+    #[serde(default = "default_eq_bands")]
+    pub eq_bands: Vec<EqBand>,
+    #[serde(default)]
+    pub bass_boost: bool,
+    #[serde(default)]
+    pub bass_boost_db: f32,
+    #[serde(default)]
+    pub compressor: bool,
+    #[serde(default)]
+    pub reverb: bool,
+    #[serde(default)]
+    pub crossfeed: bool,
+    #[serde(default)]
+    pub crossfeed_strength: u8,
+    #[serde(default)]
+    pub wideness: bool,
+    #[serde(default)]
+    pub wideness_pct: u8,
+    #[serde(default)]
+    pub limiter: bool,
+    #[serde(default = "default_limiter_db")]
+    pub limiter_db: f32,
+    #[serde(default)]
+    pub bypass: bool,
+}
+
+fn default_limiter_db() -> f32 {
+    -0.1
+}
+
+impl Default for AudioEffects {
+    fn default() -> Self {
+        Self {
+            eq_enabled: false,
+            eq_bands: default_eq_bands(),
+            bass_boost: false,
+            bass_boost_db: 0.0,
+            compressor: false,
+            reverb: false,
+            crossfeed: false,
+            crossfeed_strength: 0,
+            wideness: false,
+            wideness_pct: 0,
+            limiter: true,
+            limiter_db: -0.1,
+            bypass: false,
+        }
+    }
+}
+
+/// Named audio preset (EQ + effects + optional ChatMix snapshot).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioPreset {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub effects: AudioEffects,
+    #[serde(default)]
+    pub chatmix: Option<ChatMixState>,
+    #[serde(default)]
+    pub notes: String,
+}
+
+/// Auto-apply a preset when a given output / headset is active.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresetRule {
+    pub device_id: String,
+    #[serde(default)]
+    pub device_name: String,
+    #[serde(default)]
+    pub route_id: String,
+    pub preset_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +321,31 @@ pub enum IpcCommand {
 
     /// Create PipeWire/Pulse null sinks for Game/Chat
     SetupChatMix,
+
+    /// List saved audio presets (JDSP-style)
+    ListAudioPresets,
+
+    /// Load audio preset by id and apply (ChatMix + WirePlumber DSP)
+    LoadAudioPreset { preset_id: String },
+
+    /// Save / upsert audio preset
+    SaveAudioPreset { preset: AudioPreset },
+
+    /// Delete audio preset by id
+    DeleteAudioPreset { preset_id: String },
+
+    /// List device→preset auto-apply rules
+    ListPresetRules,
+
+    /// Add or update a preset rule
+    SetPresetRule { rule: PresetRule },
+
+    /// Delete preset rule for a device (+ optional route)
+    DeletePresetRule {
+        device_id: String,
+        #[serde(default)]
+        route_id: String,
+    },
 
     /// Ping / health check
     Ping,
