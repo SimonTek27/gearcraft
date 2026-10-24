@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gearcraft_core::{
     default_socket_path, ChatMixState, ConnectionStatus, DeviceInfo, DeviceKind, DeviceStatus,
-    IpcCommand, IpcRequest, IpcResponse, MacroDef, PeripheralAddon, RgbColor,
+    IpcCommand, IpcRequest, IpcResponse, PeripheralAddon, RgbColor,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
