@@ -5,8 +5,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use gearcraft_core::{
-    default_socket_path, AudioPreset, IpcCommand, IpcRequest, IpcResponse, PresetRule,
-    RgbColor,
+    default_socket_path, AudioPreset, ChannelDevicePolicy, IpcCommand, IpcRequest, IpcResponse,
+    PresetRule, RgbColor,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -29,20 +29,14 @@ impl std::fmt::Display for IpcError {
     }
 }
 
+impl std::error::Error for IpcError {}
+
 fn request(cmd: IpcCommand) -> Result<Value, IpcError> {
     let path = default_socket_path();
-    let mut stream = UnixStream::connect(&path).map_err(|e| {
-        IpcError::Connect(format!(
-            "cannot connect to {} ({e}) — start gearcraft-daemon",
-            path.display()
-        ))
-    })?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .ok();
-    stream
-        .set_write_timeout(Some(Duration::from_secs(3)))
-        .ok();
+    let mut stream = UnixStream::connect(&path)
+        .map_err(|e| IpcError::Connect(format!("{}: {e}", path.display())))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
 
     let req = IpcRequest {
         id: Uuid::new_v4(),
@@ -52,7 +46,9 @@ fn request(cmd: IpcCommand) -> Result<Value, IpcError> {
     let len = (body.len() as u32).to_le_bytes();
     stream
         .write_all(&len)
-        .and_then(|_| stream.write_all(&body))
+        .map_err(|e| IpcError::Io(e.to_string()))?;
+    stream
+        .write_all(&body)
         .map_err(|e| IpcError::Io(e.to_string()))?;
 
     let mut len_buf = [0u8; 4];
@@ -141,4 +137,20 @@ pub fn delete_preset_rule(device_id: &str, route_id: &str) -> Result<Value, IpcE
         device_id: device_id.to_string(),
         route_id: route_id.to_string(),
     })
+}
+
+pub fn get_device_manager() -> Result<Value, IpcError> {
+    request(IpcCommand::GetDeviceManager)
+}
+
+pub fn apply_device_manager() -> Result<Value, IpcError> {
+    request(IpcCommand::ApplyDeviceManager)
+}
+
+pub fn link_all_devices(device_id: Option<String>, enabled: bool) -> Result<Value, IpcError> {
+    request(IpcCommand::LinkAllDevices { device_id, enabled })
+}
+
+pub fn set_channel_device_policy(policy: ChannelDevicePolicy) -> Result<Value, IpcError> {
+    request(IpcCommand::SetChannelDevicePolicy { policy })
 }
