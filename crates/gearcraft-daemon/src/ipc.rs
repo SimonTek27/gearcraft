@@ -36,30 +36,19 @@ impl DeviceRegistry {
 
     pub fn refresh(&mut self) {
         let mut found = usb::scan_devices();
-        let using_demo = found.is_empty();
-        if using_demo {
-            found = demo_devices();
-        }
-
-        // Hotplug poll runs every 15 s: rebuild addons only when the device
-        // set (ids/paths) actually changed, to avoid re-initialising hardware
-        // on every tick.
-        let unchanged = found.len() == self.devices.len()
-            && found
-                .iter()
-                .zip(self.devices.iter())
-                .all(|(new, old)| new.id == old.id && new.path == old.path);
-        if unchanged && !self.addons.is_empty() {
-            return;
-        }
-
-        if using_demo {
+        if found.is_empty() {
             info!("No live devices – loading demo registry");
+            found = demo_devices();
         }
         self.devices = found;
         self.addons.clear();
         for dev in &self.devices {
             if let Some(mut addon) = addons::steelseries::try_create(dev) {
+                if let Err(e) = addon.initialize() {
+                    warn!("addon init failed for {}: {e}", dev.id);
+                }
+                self.addons.insert(dev.id.clone(), addon);
+            } else if let Some(mut addon) = addons::razer::try_create(dev) {
                 if let Err(e) = addon.initialize() {
                     warn!("addon init failed for {}: {e}", dev.id);
                 }
@@ -118,31 +107,31 @@ impl DeviceRegistry {
 fn demo_devices() -> Vec<DeviceInfo> {
     vec![
         DeviceInfo {
-            id: "ss-rival3-001".into(),
-            name: "Rival 3".into(),
+            id: "demo-rival3".into(),
+            name: "Rival 3 (demo)".into(),
             vendor: "SteelSeries".into(),
             kind: DeviceKind::Mouse,
             vendor_id: 0x1038,
             product_id: 0x1824,
-            path: Some("/dev/hidraw0".into()),
+            path: None,
         },
         DeviceInfo {
-            id: "ss-apex5-001".into(),
-            name: "Apex 5".into(),
+            id: "demo-apex".into(),
+            name: "Apex 3 (demo)".into(),
             vendor: "SteelSeries".into(),
             kind: DeviceKind::Keyboard,
             vendor_id: 0x1038,
-            product_id: 0x1612,
-            path: Some("/dev/hidraw1".into()),
+            product_id: 0x161a,
+            path: None,
         },
         DeviceInfo {
-            id: "ss-arctis7-001".into(),
-            name: "Arctis 7".into(),
+            id: "demo-arctis".into(),
+            name: "Arctis 7 (demo)".into(),
             vendor: "SteelSeries".into(),
             kind: DeviceKind::Headset,
             vendor_id: 0x1038,
-            product_id: 0x12AD,
-            path: Some("/dev/hidraw2".into()),
+            product_id: 0x12ad,
+            path: None,
         },
     ]
 }
@@ -154,40 +143,33 @@ pub struct SharedState {
     pub audio_presets: Arc<RwLock<crate::audio_presets::AudioPresetStore>>,
 }
 
-pub async fn run_server(
-    state: SharedState,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_server(state: SharedState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let path = default_socket_path();
-    if path.exists() {
+    if Path::new(&path).exists() {
         let _ = std::fs::remove_file(&path);
     }
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-
     let listener = UnixListener::bind(&path)?;
-    info!("GearCraft daemon IPC listening on {}", path.display());
+    info!("IPC listening on {path}");
 
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                let registry = Arc::clone(&state.registry);
-                let macros = Arc::clone(&state.macros);
-                let chatmix = Arc::clone(&state.chatmix);
-                let audio_presets = Arc::clone(&state.audio_presets);
+                let st = SharedState {
+                    registry: Arc::clone(&state.registry),
+                    macros: Arc::clone(&state.macros),
+                    chatmix: Arc::clone(&state.chatmix),
+                    audio_presets: Arc::clone(&state.audio_presets),
+                };
                 tokio::spawn(async move {
-                    let st = SharedState {
-                        registry,
-                        macros,
-                        chatmix,
-                        audio_presets,
-                    };
                     if let Err(e) = handle_client(stream, st).await {
-                        warn!("client handler error: {e}");
+                        error!("client error: {e}");
                     }
                 });
             }
-            Err(e) => error!("accept error: {e}"),
+            Err(e) => error!("accept: {e}"),
         }
     }
 }
@@ -198,334 +180,197 @@ async fn handle_client(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         let mut len_buf = [0u8; 4];
-        match stream.read_exact(&mut len_buf).await {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(e.into()),
+        if stream.read_exact(&mut len_buf).await.is_err() {
+            break;
         }
         let len = u32::from_le_bytes(len_buf) as usize;
-        if len == 0 || len > 1_048_576 {
-            warn!("invalid message length: {len}");
-            break;
+        if len > 16 * 1024 * 1024 {
+            return Err("frame too large".into());
         }
         let mut body = vec![0u8; len];
         stream.read_exact(&mut body).await?;
-
-        let request: IpcRequest = match serde_json::from_slice(&body) {
-            Ok(r) => r,
-            Err(e) => {
-                let err_resp = IpcResponse::failure(Uuid::nil(), format!("invalid JSON: {e}"));
-                write_response(&mut stream, &err_resp).await?;
-                continue;
-            }
-        };
-
-        let response = dispatch(request, &state).await;
-        write_response(&mut stream, &response).await?;
+        let req: IpcRequest = serde_json::from_slice(&body)?;
+        let resp = dispatch(req, &state).await;
+        let out = serde_json::to_vec(&resp)?;
+        let len_out = (out.len() as u32).to_le_bytes();
+        stream.write_all(&len_out).await?;
+        stream.write_all(&out).await?;
     }
     Ok(())
 }
 
-async fn write_response(
-    stream: &mut UnixStream,
-    response: &IpcResponse,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let body = serde_json::to_vec(response)?;
-    let len = (body.len() as u32).to_le_bytes();
-    stream.write_all(&len).await?;
-    stream.write_all(&body).await?;
-    stream.flush().await?;
-    Ok(())
+async fn dispatch(req: IpcRequest, state: &SharedState) -> IpcResponse {
+    let id = req.id.clone();
+    match handle_cmd(req.command, state).await {
+        Ok(data) => IpcResponse {
+            id,
+            ok: true,
+            data,
+            error: None,
+        },
+        Err(e) => IpcResponse {
+            id,
+            ok: false,
+            data: None,
+            error: Some(e),
+        },
+    }
 }
 
-fn clamp_balance(b: i8) -> i8 {
-    b.clamp(-100, 100)
-}
-
-fn volumes_from_balance(balance: i8) -> (u8, u8) {
-    // balance +100 → game 100 chat 0; -100 → game 0 chat 100
-    let b = balance as i16;
-    let game = ((100 + b) / 2).clamp(0, 100) as u8;
-    let chat = ((100 - b) / 2).clamp(0, 100) as u8;
-    (game, chat)
-}
-
-async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
-    let id = request.id;
-    match request.cmd {
-        IpcCommand::Ping => IpcResponse::success(id, "pong"),
-
-        IpcCommand::GetDevices => {
+async fn handle_cmd(
+    cmd: IpcCommand,
+    state: &SharedState,
+) -> Result<Option<serde_json::Value>, String> {
+    match cmd {
+        IpcCommand::Ping => Ok(Some(serde_json::json!({"pong": true}))),
+        IpcCommand::ListDevices => {
             let reg = state.registry.read().await;
-            IpcResponse::success(id, reg.list())
+            Ok(Some(serde_json::to_value(reg.list()).map_err(|e| e.to_string())?))
         }
-
-        IpcCommand::GetDeviceStatus { device_id } => {
+        IpcCommand::GetDevice { device_id } => {
             let reg = state.registry.read().await;
-            match reg.get(&device_id) {
-                Some(dev) => {
-                    let details = reg
-                        .status_json(&device_id)
-                        .unwrap_or_else(|_| serde_json::json!({}));
-                    let status = DeviceStatus {
-                        id: dev.id.clone(),
-                        status: ConnectionStatus::Online,
-                        battery: if dev.kind == DeviceKind::Headset {
-                            details
-                                .get("battery")
-                                .and_then(|v| v.as_u64())
-                                .map(|n| n as u8)
-                                .or(Some(78))
-                        } else {
-                            None
-                        },
-                        details,
-                    };
-                    IpcResponse::success(id, status)
-                }
-                None => IpcResponse::failure(id, format!("device not found: {device_id}")),
-            }
+            let d = reg
+                .get(&device_id)
+                .ok_or_else(|| format!("unknown device: {device_id}"))?;
+            Ok(Some(serde_json::to_value(d).map_err(|e| e.to_string())?))
         }
-
-        IpcCommand::ApplyProfile { device_id, profile } => {
+        IpcCommand::RefreshDevices => {
             let mut reg = state.registry.write().await;
-            match reg.apply_profile(&device_id, profile) {
-                Ok(()) => IpcResponse::success(id, serde_json::json!({ "applied": true })),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            reg.refresh();
+            Ok(Some(serde_json::json!({"count": reg.list().len()})))
         }
-
         IpcCommand::SetColor {
             device_id,
             zone,
             color,
         } => {
             let mut reg = state.registry.write().await;
-            match reg.set_color(&device_id, &zone, color) {
-                Ok(()) => IpcResponse::success(id, serde_json::json!({ "set": true })),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            reg.set_color(&device_id, &zone, color)?;
+            Ok(Some(serde_json::json!({"applied": true})))
         }
-
-        IpcCommand::ListAddons => IpcResponse::success(
-            id,
-            vec![serde_json::json!({
-                "name": "steelseries",
-                "version": "0.1.0",
-                "protocols": ["rival3", "apex", "arctis"],
-                "devices_supported": ["Rival 3", "Apex 3/5/7", "Arctis 7 / Nova 7"]
-            })],
-        ),
-
+        IpcCommand::ApplyProfile {
+            device_id,
+            profile,
+        } => {
+            let mut reg = state.registry.write().await;
+            reg.apply_profile(&device_id, profile)?;
+            Ok(Some(serde_json::json!({"applied": true})))
+        }
+        IpcCommand::GetStatus { device_id } => {
+            let reg = state.registry.read().await;
+            let st = reg.status_json(&device_id)?;
+            Ok(Some(st))
+        }
         IpcCommand::ListMacros => {
-            let store = state.macros.read().await;
-            IpcResponse::success(id, store.list())
+            let macros = state.macros.read().await;
+            Ok(Some(
+                serde_json::to_value(macros.list()).map_err(|e| e.to_string())?,
+            ))
         }
-
         IpcCommand::UpsertMacro { macro_def } => {
-            let mut store = state.macros.write().await;
-            store.upsert(macro_def);
-            IpcResponse::success(id, serde_json::json!({ "saved": true }))
+            let mut macros = state.macros.write().await;
+            macros.upsert(macro_def)?;
+            Ok(Some(serde_json::json!({"saved": true})))
         }
-
         IpcCommand::DeleteMacro { macro_id } => {
-            let mut store = state.macros.write().await;
-            if store.delete(&macro_id) {
-                IpcResponse::success(id, serde_json::json!({ "deleted": true }))
-            } else {
-                IpcResponse::failure(id, format!("macro not found: {macro_id}"))
-            }
+            let mut macros = state.macros.write().await;
+            macros.delete(&macro_id)?;
+            Ok(Some(serde_json::json!({"deleted": true})))
         }
-
         IpcCommand::RunMacro { macro_id } => {
-            let store = state.macros.read().await;
-            match store.run(&macro_id) {
-                Ok(via_uinput) => IpcResponse::success(
-                    id,
-                    serde_json::json!({ "ran": true, "uinput": via_uinput }),
-                ),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            let macros = state.macros.read().await;
+            let def = macros
+                .get(&macro_id)
+                .ok_or_else(|| format!("unknown macro: {macro_id}"))?
+                .clone();
+            drop(macros);
+            crate::uinput_macros::run_macro(&def).await?;
+            Ok(Some(serde_json::json!({"ran": true})))
         }
-
         IpcCommand::GetChatMix => {
             let cm = state.chatmix.read().await;
-            let backend = crate::chatmix_pw::detect_sinks().await;
-            IpcResponse::success(
-                id,
-                serde_json::json!({
-                    "balance": cm.balance,
-                    "game_volume": cm.game_volume,
-                    "chat_volume": cm.chat_volume,
-                    "backend": backend.backend,
-                    "available": backend.available,
-                    "game_sink": backend.game_sink,
-                    "chat_sink": backend.chat_sink,
-                    "message": backend.message,
-                }),
-            )
+            Ok(Some(serde_json::to_value(&*cm).map_err(|e| e.to_string())?))
         }
-
         IpcCommand::SetChatMix { balance } => {
-            let balance = clamp_balance(balance);
-            let (game, chat) = volumes_from_balance(balance);
             let mut cm = state.chatmix.write().await;
-            cm.balance = balance;
-            cm.game_volume = game;
-            cm.chat_volume = chat;
-            info!("ChatMix balance={balance} game={game}% chat={chat}%");
-            if let Err(e) = crate::config::save_chatmix(&cm) {
-                warn!("ChatMix persist failed: {e}");
+            cm.balance = balance.clamp(-100, 100);
+            // map balance to volumes
+            if cm.balance >= 0 {
+                cm.game_volume = 100;
+                cm.chat_volume = (100 - cm.balance) as u8;
+            } else {
+                cm.chat_volume = 100;
+                cm.game_volume = (100 + cm.balance) as u8;
             }
-
-            let apply = crate::chatmix_pw::apply_volumes(game, chat).await;
-            match apply {
-                Ok(backend) => IpcResponse::success(
-                    id,
-                    serde_json::json!({
-                        "balance": cm.balance,
-                        "game_volume": cm.game_volume,
-                        "chat_volume": cm.chat_volume,
-                        "backend": backend.backend,
-                        "available": true,
-                        "applied": true,
-                        "message": backend.message,
-                    }),
-                ),
-                Err(e) => {
-                    // State still updated & persisted; audio not applied
-                    warn!("ChatMix audio apply failed: {e}");
-                    IpcResponse::success(
-                        id,
-                        serde_json::json!({
-                            "balance": cm.balance,
-                            "game_volume": cm.game_volume,
-                            "chat_volume": cm.chat_volume,
-                            "available": false,
-                            "applied": false,
-                            "message": e,
-                        }),
-                    )
-                }
-            }
+            let g = cm.game_volume;
+            let c = cm.chat_volume;
+            drop(cm);
+            let info = crate::chatmix_pw::apply_volumes(g, c).await?;
+            Ok(Some(serde_json::json!({
+                "balance": balance,
+                "backend": info.backend,
+                "message": info.message,
+            })))
         }
-
         IpcCommand::SetupChatMix => {
-            match crate::chatmix_pw::setup_virtual_sinks().await {
-                Ok(msg) => {
-                    let backend = crate::chatmix_pw::detect_sinks().await;
-                    IpcResponse::success(
-                        id,
-                        serde_json::json!({
-                            "ok": true,
-                            "message": msg,
-                            "backend": backend.backend,
-                            "available": backend.available,
-                            "game_sink": backend.game_sink,
-                            "chat_sink": backend.chat_sink,
-                        }),
-                    )
-                }
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            let msg = crate::chatmix_pw::setup_virtual_sinks().await?;
+            Ok(Some(serde_json::json!({"message": msg})))
         }
-
-
         IpcCommand::ListAudioPresets => {
             let store = state.audio_presets.read().await;
-            IpcResponse::success(id, store.list())
+            Ok(Some(
+                serde_json::to_value(store.list()).map_err(|e| e.to_string())?,
+            ))
         }
-
         IpcCommand::LoadAudioPreset { preset_id } => {
             let preset = {
                 let store = state.audio_presets.read().await;
-                store.get(&preset_id).cloned()
+                store
+                    .get(&preset_id)
+                    .cloned()
+                    .ok_or_else(|| format!("unknown preset: {preset_id}"))?
             };
-            match preset {
-                Some(p) => {
-                    // Update in-memory ChatMix if snapshot present
-                    if let Some(ref cm) = p.chatmix {
-                        let mut c = state.chatmix.write().await;
-                        *c = cm.clone();
-                    }
-                    match crate::audio_presets::apply_preset_runtime(&p).await {
-                        Ok(data) => IpcResponse::success(id, data),
-                        Err(e) => IpcResponse::failure(id, e),
-                    }
-                }
-                None => IpcResponse::failure(id, format!("preset not found: {preset_id}")),
+            let result = crate::audio_presets::apply_preset_runtime(&preset).await?;
+            if let Some(cm) = &preset.chatmix {
+                let mut state_cm = state.chatmix.write().await;
+                *state_cm = cm.clone();
             }
+            Ok(Some(result))
         }
-
         IpcCommand::SaveAudioPreset { preset } => {
             let mut store = state.audio_presets.write().await;
-            match store.save(preset) {
-                Ok(()) => IpcResponse::success(id, serde_json::json!({ "saved": true })),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            store.save(preset)?;
+            Ok(Some(serde_json::json!({"saved": true})))
         }
-
         IpcCommand::DeleteAudioPreset { preset_id } => {
             let mut store = state.audio_presets.write().await;
-            match store.delete(&preset_id) {
-                Ok(true) => IpcResponse::success(id, serde_json::json!({ "deleted": true })),
-                Ok(false) => IpcResponse::failure(id, format!("preset not found: {preset_id}")),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            store.delete(&preset_id)?;
+            Ok(Some(serde_json::json!({"deleted": true})))
         }
-
         IpcCommand::ListPresetRules => {
             let store = state.audio_presets.read().await;
-            IpcResponse::success(id, store.list_rules())
+            Ok(Some(
+                serde_json::to_value(store.list_rules()).map_err(|e| e.to_string())?,
+            ))
         }
-
         IpcCommand::SetPresetRule { rule } => {
             let mut store = state.audio_presets.write().await;
-            match store.set_rule(rule) {
-                Ok(()) => IpcResponse::success(id, serde_json::json!({ "ok": true })),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            store.set_rule(rule)?;
+            Ok(Some(serde_json::json!({"saved": true})))
         }
-
         IpcCommand::DeletePresetRule {
             device_id,
             route_id,
         } => {
             let mut store = state.audio_presets.write().await;
-            match store.delete_rule(&device_id, &route_id) {
-                Ok(true) => IpcResponse::success(id, serde_json::json!({ "deleted": true })),
-                Ok(false) => IpcResponse::failure(id, "rule not found"),
-                Err(e) => IpcResponse::failure(id, e),
-            }
+            let rid = route_id.unwrap_or_default();
+            store.delete_rule(&device_id, &rid)?;
+            Ok(Some(serde_json::json!({"deleted": true})))
         }
-
-        IpcCommand::Shutdown => {
-            info!("shutdown requested via IPC");
-            IpcResponse::success(id, "shutting down")
-        }
+        IpcCommand::GetConnectionStatus => Ok(Some(serde_json::json!({
+            "status": "online",
+            "socket": default_socket_path(),
+        }))),
+        _ => Err(format!("unhandled command")),
     }
-}
-
-#[allow(dead_code)]
-pub async fn send_request(
-    path: &Path,
-    cmd: IpcCommand,
-) -> Result<IpcResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let mut stream = UnixStream::connect(path).await?;
-    let request = IpcRequest {
-        id: Uuid::new_v4(),
-        cmd,
-    };
-    let body = serde_json::to_vec(&request)?;
-    let len = (body.len() as u32).to_le_bytes();
-    stream.write_all(&len).await?;
-    stream.write_all(&body).await?;
-    stream.flush().await?;
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let resp_len = u32::from_le_bytes(len_buf) as usize;
-    let mut resp_body = vec![0u8; resp_len];
-    stream.read_exact(&mut resp_body).await?;
-    Ok(serde_json::from_slice(&resp_body)?)
 }
