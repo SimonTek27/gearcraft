@@ -4,10 +4,11 @@
 //! Socket path: `$XDG_RUNTIME_DIR/gearcraft.sock` (fallback `/tmp/gearcraft.sock`).
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
-// Device & status types
+// Devices
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -16,20 +17,17 @@ pub enum DeviceKind {
     Mouse,
     Keyboard,
     Headset,
-    Mousepad,
     Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
-    /// Stable unique id (usually vendor:product + serial or path)
     pub id: String,
     pub name: String,
     pub vendor: String,
     pub kind: DeviceKind,
     pub vendor_id: u16,
     pub product_id: u16,
-    /// Path to hidraw device if available
     pub path: Option<String>,
 }
 
@@ -38,41 +36,41 @@ pub struct DeviceInfo {
 pub enum ConnectionStatus {
     Online,
     Offline,
-    Error,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceStatus {
-    pub id: String,
-    pub status: ConnectionStatus,
-    /// Optional battery percentage 0-100
-    pub battery: Option<u8>,
-    /// Free-form status payload from the addon
+    pub device_id: String,
+    pub connection: ConnectionStatus,
+    pub battery_percent: Option<u8>,
     pub details: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RgbColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
 }
 
-// ---------------------------------------------------------------------------
-// Addon trait
-// ---------------------------------------------------------------------------
-
 pub trait PeripheralAddon: Send + Sync {
     fn device_info(&self) -> DeviceInfo;
     fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    fn apply_profile(&mut self, profile_data: serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn apply_profile(
+        &mut self,
+        profile_data: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     fn get_status(&self) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
-    fn set_color(&mut self, zone: &str, color: RgbColor) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn set_color(
+        &mut self,
+        zone: &str,
+        color: RgbColor,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let _ = (zone, color);
         Ok(())
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Macros & ChatMix
@@ -80,9 +78,7 @@ pub trait PeripheralAddon: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MacroAction {
-    /// Key name or HID usage string, e.g. "KEY_F1", "ctrl+c"
     pub key: String,
-    /// Delay after this action in ms
     #[serde(default)]
     pub delay_ms: u32,
 }
@@ -91,10 +87,8 @@ pub struct MacroAction {
 pub struct MacroDef {
     pub id: String,
     pub name: String,
-    /// Device this macro is bound to (optional = global)
     #[serde(default)]
     pub device_id: Option<String>,
-    /// Trigger button / key label
     pub trigger: String,
     pub actions: Vec<MacroAction>,
     #[serde(default = "default_true")]
@@ -107,7 +101,6 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMixState {
-    /// -100 = full chat, 0 = balanced, +100 = full game
     pub balance: i8,
     pub game_volume: u8,
     pub chat_volume: u8,
@@ -123,37 +116,22 @@ impl Default for ChatMixState {
     }
 }
 
-
 // ---------------------------------------------------------------------------
-// Audio presets (JDSP4Linux-style — GearCraft aims to replace JamesDSP)
+// Audio presets
 // ---------------------------------------------------------------------------
 
-/// One graphic-EQ band (Hz + gain dB). JamesDSP uses FIR/IIR multimodal EQ;
-/// we persist a portable band list that can drive PipeWire / EasyEffects later.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqBand {
     pub freq_hz: f32,
-    /// Gain in dB, typically −12…+12
     pub gain_db: f32,
+    pub q: f32,
 }
 
-fn default_eq_bands() -> Vec<EqBand> {
-    // 10-band ISO-ish centres
-    [31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
-        .into_iter()
-        .map(|freq_hz| EqBand {
-            freq_hz,
-            gain_db: 0.0,
-        })
-        .collect()
-}
-
-/// Effect toggles / parameters stored with a preset (DSP engine TBD).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AudioEffects {
     #[serde(default)]
     pub eq_enabled: bool,
-    #[serde(default = "default_eq_bands")]
+    #[serde(default)]
     pub eq_bands: Vec<EqBand>,
     #[serde(default)]
     pub bass_boost: bool,
@@ -162,81 +140,143 @@ pub struct AudioEffects {
     #[serde(default)]
     pub compressor: bool,
     #[serde(default)]
-    pub reverb: bool,
-    #[serde(default)]
-    pub crossfeed: bool,
-    /// 0 = off … 100 = strong (BS2B-style)
-    #[serde(default)]
-    pub crossfeed_strength: u8,
-    #[serde(default)]
-    pub wideness: bool,
-    #[serde(default)]
-    pub wideness_pct: u8,
+    pub crossfeed: f32,
     #[serde(default)]
     pub limiter: bool,
-    #[serde(default = "default_limiter_db")]
-    pub limiter_db: f32,
     #[serde(default)]
-    pub bypass: bool,
+    pub preamp_db: f32,
 }
 
-fn default_limiter_db() -> f32 {
-    -0.1
-}
-
-impl Default for AudioEffects {
-    fn default() -> Self {
-        Self {
-            eq_enabled: false,
-            eq_bands: default_eq_bands(),
-            bass_boost: false,
-            bass_boost_db: 0.0,
-            compressor: false,
-            reverb: false,
-            crossfeed: false,
-            crossfeed_strength: 0,
-            wideness: false,
-            wideness_pct: 0,
-            limiter: true,
-            limiter_db: -0.1,
-            bypass: false,
-        }
-    }
-}
-
-/// Named audio preset (EQ + effects + optional ChatMix snapshot).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioPreset {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub effects: AudioEffects,
-    /// Optional ChatMix snapshot applied on load
     #[serde(default)]
     pub chatmix: Option<ChatMixState>,
-    /// Free-form notes
     #[serde(default)]
     pub notes: String,
 }
 
-/// Auto-apply a preset when a given output / headset is active (JDSP rules).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetRule {
-    /// Device id (GearCraft device id or PipeWire sink name)
     pub device_id: String,
-    #[serde(default)]
-    pub device_name: String,
-    /// Optional route (e.g. headphone vs speaker on same card)
     #[serde(default)]
     pub route_id: String,
     pub preset_id: String,
 }
 
 // ---------------------------------------------------------------------------
-// IPC Protocol
+// Sonar Device Manager
 // ---------------------------------------------------------------------------
 
-/// Default Unix socket path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SonarChannelId {
+    Game,
+    Chat,
+    Media,
+    Aux,
+}
+
+impl SonarChannelId {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Game => "game",
+            Self::Chat => "chat",
+            Self::Media => "media",
+            Self::Aux => "aux",
+        }
+    }
+
+    pub fn all() -> [Self; 4] {
+        [Self::Game, Self::Chat, Self::Media, Self::Aux]
+    }
+
+    pub fn virtual_sink(self) -> &'static str {
+        match self {
+            Self::Game => "gearcraft_game",
+            Self::Chat => "gearcraft_chat",
+            Self::Media => "gearcraft_media",
+            Self::Aux => "gearcraft_aux",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioOutputDevice {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub is_virtual: bool,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelDevicePolicy {
+    pub channel: SonarChannelId,
+    #[serde(default)]
+    pub priority: Vec<String>,
+    #[serde(default)]
+    pub excluded: Vec<String>,
+    #[serde(default)]
+    pub active_device_id: Option<String>,
+}
+
+impl ChannelDevicePolicy {
+    pub fn new(channel: SonarChannelId) -> Self {
+        Self {
+            channel,
+            priority: Vec::new(),
+            excluded: Vec::new(),
+            active_device_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupMode {
+    Manual,
+    Automatic,
+}
+
+impl Default for BackupMode {
+    fn default() -> Self {
+        Self::Automatic
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceManagerState {
+    #[serde(default)]
+    pub link_all: bool,
+    #[serde(default)]
+    pub backup_mode: BackupMode,
+    #[serde(default = "default_true")]
+    pub auto_switch_on_startup: bool,
+    pub channels: Vec<ChannelDevicePolicy>,
+}
+
+impl Default for DeviceManagerState {
+    fn default() -> Self {
+        Self {
+            link_all: true,
+            backup_mode: BackupMode::Automatic,
+            auto_switch_on_startup: true,
+            channels: SonarChannelId::all()
+                .into_iter()
+                .map(ChannelDevicePolicy::new)
+                .collect(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// IPC
+// ---------------------------------------------------------------------------
+
 pub fn default_socket_path() -> std::path::PathBuf {
     if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
         std::path::PathBuf::from(runtime).join("gearcraft.sock")
@@ -245,15 +285,12 @@ pub fn default_socket_path() -> std::path::PathBuf {
     }
 }
 
-/// Client → Daemon request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcRequest {
-    /// Correlation id (UUID)
     pub id: Uuid,
     pub cmd: IpcCommand,
 }
 
-/// Daemon → Client response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcResponse {
     pub id: Uuid,
@@ -284,97 +321,53 @@ impl IpcResponse {
     }
 }
 
-/// All supported IPC commands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "name", content = "params", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcCommand {
-    /// List all known / connected devices
     GetDevices,
-
-    /// Get detailed status for one device
     GetDeviceStatus { device_id: String },
-
-    /// Apply a full profile (JSON blob defined by the addon)
     ApplyProfile {
         device_id: String,
         profile: serde_json::Value,
     },
-
-    /// Quick RGB colour change for a zone
     SetColor {
         device_id: String,
         zone: String,
         color: RgbColor,
     },
-
-    /// List loaded addons
     ListAddons,
-
-    /// List saved macros
     ListMacros,
-
-    /// Create or update a macro
     UpsertMacro { macro_def: MacroDef },
-
-    /// Delete a macro by id
     DeleteMacro { macro_id: String },
-
-    /// Fire a macro once (test / runtime)
     RunMacro { macro_id: String },
-
-    /// Get software ChatMix state
     GetChatMix,
-
-    /// Set software ChatMix balance (-100..=100)
     SetChatMix { balance: i8 },
-
-    /// Create PipeWire/Pulse null sinks for Game/Chat
     SetupChatMix,
-
-    /// List saved audio presets (JDSP-style)
     ListAudioPresets,
-
-    /// Load audio preset by id and apply (ChatMix + effects state)
     LoadAudioPreset { preset_id: String },
-
-    /// Save / upsert audio preset
     SaveAudioPreset { preset: AudioPreset },
-
-    /// Delete audio preset by id
     DeleteAudioPreset { preset_id: String },
-
-    /// List device→preset auto-apply rules
     ListPresetRules,
-
-    /// Add or update a preset rule
     SetPresetRule { rule: PresetRule },
-
-    /// Delete preset rule for a device (+ optional route)
     DeletePresetRule {
         device_id: String,
         #[serde(default)]
         route_id: String,
     },
-
-    /// Ping / health check
+    GetDeviceManager,
+    SetDeviceManager { state: DeviceManagerState },
+    SetChannelDevicePolicy { policy: ChannelDevicePolicy },
+    LinkAllDevices {
+        device_id: Option<String>,
+        enabled: bool,
+    },
+    ApplyDeviceManager,
     Ping,
-
-    /// Graceful shutdown of the daemon (admin only, future)
     Shutdown,
 }
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, thiserror::Error)]
-pub enum CoreError {
-    #[error("device not found: {0}")]
-    DeviceNotFound(String),
-    #[error("addon error: {0}")]
-    Addon(String),
-    #[error("serialization error: {0}")]
-    Serde(#[from] serde_json::Error),
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
+#[derive(Debug, Error)]
+pub enum GearCraftError {
+    #[error("{0}")]
+    Message(String),
 }
