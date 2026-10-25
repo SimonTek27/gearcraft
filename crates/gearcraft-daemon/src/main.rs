@@ -3,6 +3,7 @@
 mod addons;
 mod app_routing;
 mod hotplug;
+mod device_manager;
 mod audio_presets;
 mod chatmix_pw;
 mod dsp_pw;
@@ -46,10 +47,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = config::load_settings();
     let backend = chatmix_pw::detect_sinks().await;
     info!("ChatMix audio: {} – {}", backend.backend, backend.message);
-    info!(
-        "ChatMix balance from config: {} (game {}% / chat {}%)",
-        settings.chatmix.balance, settings.chatmix.game_volume, settings.chatmix.chat_volume
-    );
 
     if backend.available {
         let g = settings.chatmix.game_volume;
@@ -64,15 +61,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     registry.refresh();
 
     let macros = MacroStore::load_or_defaults();
-    info!("macros in store: {}", macros.list().len());
-
     let audio_presets = AudioPresetStore::load();
+    let device_manager = device_manager::DeviceManager::load();
 
     let state = SharedState {
         registry: Arc::new(RwLock::new(registry)),
         macros: Arc::new(RwLock::new(macros)),
         chatmix: Arc::new(RwLock::new(settings.chatmix)),
         audio_presets: Arc::new(RwLock::new(audio_presets)),
+        device_manager: Arc::new(RwLock::new(device_manager)),
     };
 
     tokio::spawn(async move {
@@ -84,6 +81,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::spawn(async move {
         hotplug::run(reg_hp, presets_hp).await;
     });
+
+    let dm_tick = Arc::clone(&state.device_manager);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+            let mut dm = dm_tick.write().await;
+            device_manager::failover_tick(&mut dm).await;
+        }
+    });
+
+    {
+        let mut dm = state.device_manager.write().await;
+        if dm.state.auto_switch_on_startup {
+            match device_manager::apply(&mut dm).await {
+                Ok(v) => info!("device manager startup apply: {v}"),
+                Err(e) => info!("device manager startup apply skipped: {e}"),
+            }
+        }
+    }
 
     run_server(state).await?;
     Ok(())
