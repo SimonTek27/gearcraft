@@ -1,9 +1,13 @@
-//! Rival 3 family HID protocol (from rivalcfg).
+//! Rival 3 / Rival 5 family HID protocol (from rivalcfg).
 
 use gearcraft_core::RgbColor;
 
 pub fn is_rival3_family(product_id: u16) -> bool {
-    matches!(product_id, 0x1824 | 0x184C | 0x1830 | 0x1870 | 0x1872)
+    matches!(
+        product_id,
+        0x1824 | 0x184C | 0x1830 | 0x1870 | 0x1872 | // Rival 3 variants
+        0x183C // Rival 5
+    )
 }
 
 pub fn rival3_color_report(led_id: u8, color: &RgbColor, brightness: u8) -> Vec<u8> {

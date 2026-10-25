@@ -14,7 +14,7 @@ mod usb;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use tracing_subscriber::EnvFilter;
 
 use ipc::{run_server, DeviceRegistry, SharedState};
@@ -45,11 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = config::load_settings();
     let backend = chatmix_pw::detect_sinks().await;
     info!("ChatMix audio: {} – {}", backend.backend, backend.message);
+    // DSP bridge diagnostics: wpexec/wpctl availability, filter-chain pid, LADSPA
+    info!("DSP status: {}", dsp_pw::dsp_status().await);
     info!(
         "ChatMix balance from config: {} (game {}% / chat {}%)",
         settings.chatmix.balance, settings.chatmix.game_volume, settings.chatmix.chat_volume
     );
 
+    // Re-apply last ChatMix volumes if sinks are ready
     if backend.available {
         let g = settings.chatmix.game_volume;
         let c = settings.chatmix.chat_volume;
@@ -80,12 +83,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         app_routing::run_loop(2).await;
     });
 
+    let preset_scan = Arc::clone(&state.audio_presets);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        // Device ids seen at the previous tick — used to detect connects
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
             interval.tick().await;
-            let mut reg = reg_scan.write().await;
-            reg.refresh();
+            let (appeared, now) = {
+                let mut reg = reg_scan.write().await;
+                reg.refresh();
+                let ids: std::collections::HashSet<String> =
+                    reg.list().iter().map(|d| d.id.clone()).collect();
+                let appeared: Vec<String> = ids
+                    .iter()
+                    .filter(|id| !seen.contains(*id))
+                    .cloned()
+                    .collect();
+                (appeared, ids)
+            };
+            seen = now;
+
+            for id in appeared {
+                let preset = {
+                    let store = preset_scan.read().await;
+                    store.rule_for(&id, "").cloned()
+                };
+                if let Some(p) = preset {
+                    info!(
+                        "device {id} connected → auto-applying preset '{}' ({})",
+                        p.name, p.id
+                    );
+                    if let Err(e) = audio_presets::apply_preset_runtime(&p).await {
+                        warn!("auto-apply preset for {id} failed: {e}");
+                    }
+                }
+            }
         }
     });
 

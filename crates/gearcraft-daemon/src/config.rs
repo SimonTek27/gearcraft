@@ -119,6 +119,7 @@ pub fn save_macros(macros: &[MacroDef]) -> Result<(), String> {
     write_json(&macros_path(), &macros)
 }
 
+
 // ---------------------------------------------------------------------------
 // Audio presets & rules
 // ---------------------------------------------------------------------------
@@ -173,6 +174,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let data = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    // Atomic-ish write: temp then rename
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, data.as_bytes()).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;

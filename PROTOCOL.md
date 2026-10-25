@@ -63,21 +63,100 @@ or
 | `apply_profile` | `device_id`, `profile: object` | Apply full profile JSON |
 | `set_color` | `device_id`, `zone: string`, `color: {r,g,b}` | Quick RGB set |
 | `list_addons` | — | Loaded brand addons |
-| `list_macros` | — | Saved macros |
-| `upsert_macro` | `macro_def` | Create/update macro |
-| `delete_macro` | `macro_id` | Delete macro |
-| `run_macro` | `macro_id` | Fire macro once |
-| `get_chatmix` | — | ChatMix state |
-| `set_chatmix` | `balance: i8` | Set balance −100…100 |
-| `setup_chatmix` | — | Create Game/Chat sinks |
 | `shutdown` | — | Graceful daemon stop |
+
+### Example: get_devices
+
+**Request**
+```json
+{
+  "id": "…",
+  "cmd": { "name": "get_devices" }
+}
+```
+
+**Response data**
+```json
+[
+  {
+    "id": "ss-rival3-001",
+    "name": "Rival 3",
+    "vendor": "SteelSeries",
+    "kind": "mouse",
+    "vendor_id": 4152,
+    "product_id": 6180,
+    "path": "/dev/hidraw0"
+  }
+]
+```
+
+### Example: set_color
+
+**Request**
+```json
+{
+  "id": "…",
+  "cmd": {
+    "name": "set_color",
+    "params": {
+      "device_id": "ss-rival3-001",
+      "zone": "logo",
+      "color": { "r": 0, "g": 231, "b": 160 }
+    }
+  }
+}
+```
+
+## Tauri commands (UI side)
+
+Exposed from `src-tauri` and callable via `invoke()`:
+
+- `get_devices()`
+- `get_device_status(device_id)`
+- `set_color(device_id, zone, r, g, b)`
+- `ping_daemon()`
+
+These are thin wrappers that speak the Unix-socket protocol above.
+
+## Macros
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `list_macros` | — | All macro definitions |
+| `upsert_macro` | `macro_def` | Create/update |
+| `delete_macro` | `macro_id` | Remove |
+| `run_macro` | `macro_id` | Execute (uinput stub logs keys) |
+
+```json
+{
+  "id": "demo-clip",
+  "name": "Clip highlight",
+  "trigger": "Mouse button 4",
+  "actions": [{ "key": "F8", "delay_ms": 0 }],
+  "enabled": true
+}
+```
+
+## ChatMix
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `get_chatmix` | — | `{ balance, game_volume, chat_volume }` |
+| `set_chatmix` | `balance: -100..=100` | Updates volumes; PipeWire apply TBD |
+
+### setup_chatmix
+
+Creates `gearcraft_game` and `gearcraft_chat` null sinks via `pactl` (pipewire-pulse).
+
+`set_chatmix` applies volumes through `wpctl set-volume` or `pactl set-sink-volume` when sinks are detected.
+
 
 ### Audio presets (JDSP-style)
 
 | Command | Params | Description |
 |---------|--------|-------------|
 | `list_audio_presets` | — | List saved presets |
-| `load_audio_preset` | `preset_id` | Load + apply ChatMix / WirePlumber DSP |
+| `load_audio_preset` | `preset_id` | Load + apply ChatMix / effects state |
 | `save_audio_preset` | `preset: AudioPreset` | Upsert preset |
 | `delete_audio_preset` | `preset_id` | Delete preset (+ cascading rules) |
 | `list_preset_rules` | — | Device→preset auto-apply rules |

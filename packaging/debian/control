@@ -13,5 +13,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
 Recommends: libhidapi-hidraw0
 Description: Open-source multi-brand peripheral daemon
  GearCraft daemon talks to SteelSeries (and future brands) mice,
- keyboards and headsets over USB HID and exposes a Unix socket API.
- Alternative to proprietary suites such as SteelSeries GG on Linux.
+ keyboards and headsets over USB HID, exposing a Unix-socket IPC API
+ used by the GearCraft desktop UI.
+ .
+ Alternative to proprietary SteelSeries GG on Linux.

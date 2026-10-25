@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: gearcraft
-Source: https://github.com/SimonTek27/gearcraft
+Source: https://github.com/gearcraft/gearcraft
 
 Files: *
 Copyright: 2026 GearCraft Contributors

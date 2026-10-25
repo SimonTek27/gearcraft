@@ -49,3 +49,8 @@ export GEARCRAFT_CHAT_SINK=my_chat     # name substring or pactl name
 - Games → **GearCraft_Game**
 - Discord / TeamSpeak → **GearCraft_Chat**
 - Use WirePlumber rules or `pw-loopback` for permanent links
+
+
+## Automatic app routing
+
+See [APP_ROUTING.md](APP_ROUTING.md): Discord→Chat, Haruna→Media, etc.

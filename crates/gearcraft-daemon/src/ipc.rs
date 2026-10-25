@@ -36,9 +36,25 @@ impl DeviceRegistry {
 
     pub fn refresh(&mut self) {
         let mut found = usb::scan_devices();
-        if found.is_empty() {
-            info!("No live devices – loading demo registry");
+        let using_demo = found.is_empty();
+        if using_demo {
             found = demo_devices();
+        }
+
+        // Hotplug poll runs every 15 s: rebuild addons only when the device
+        // set (ids/paths) actually changed, to avoid re-initialising hardware
+        // on every tick.
+        let unchanged = found.len() == self.devices.len()
+            && found
+                .iter()
+                .zip(self.devices.iter())
+                .all(|(new, old)| new.id == old.id && new.path == old.path);
+        if unchanged && !self.addons.is_empty() {
+            return;
+        }
+
+        if using_demo {
+            info!("No live devices – loading demo registry");
         }
         self.devices = found;
         self.addons.clear();
@@ -227,6 +243,7 @@ fn clamp_balance(b: i8) -> i8 {
 }
 
 fn volumes_from_balance(balance: i8) -> (u8, u8) {
+    // balance +100 → game 100 chat 0; -100 → game 0 chat 100
     let b = balance as i16;
     let game = ((100 + b) / 2).clamp(0, 100) as u8;
     let chat = ((100 - b) / 2).clamp(0, 100) as u8;
@@ -296,6 +313,7 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
                 "name": "steelseries",
                 "version": "0.1.0",
                 "protocols": ["rival3", "apex", "arctis"],
+                "devices_supported": ["Rival 3", "Apex 3/5/7", "Arctis 7 / Nova 7"]
             })],
         ),
 
@@ -375,6 +393,7 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
                     }),
                 ),
                 Err(e) => {
+                    // State still updated & persisted; audio not applied
                     warn!("ChatMix audio apply failed: {e}");
                     IpcResponse::success(
                         id,
@@ -411,6 +430,7 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
             }
         }
 
+
         IpcCommand::ListAudioPresets => {
             let store = state.audio_presets.read().await;
             IpcResponse::success(id, store.list())
@@ -423,6 +443,7 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
             };
             match preset {
                 Some(p) => {
+                    // Update in-memory ChatMix if snapshot present
                     if let Some(ref cm) = p.chatmix {
                         let mut c = state.chatmix.write().await;
                         *c = cm.clone();

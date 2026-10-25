@@ -52,6 +52,7 @@ impl Channel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteRule {
+    /// Substring match (case-insensitive) against binary or app name
     pub match_pattern: String,
     pub channel: Channel,
     #[serde(default)]
@@ -86,6 +87,7 @@ pub fn load_config() -> AppRouteConfig {
     cfg
 }
 
+/// Built-in heuristics (binary / app name substrings).
 fn builtin_rules() -> Vec<RouteRule> {
     let mut r = Vec::new();
     let mut add = |patterns: &[&str], ch: Channel, note: &str| {
@@ -98,38 +100,85 @@ fn builtin_rules() -> Vec<RouteRule> {
         }
     };
 
+    // Chat / voice
     add(
         &[
-            "discord", "webcord", "vesktop", "teamspeak", "ts3client", "mumble",
-            "zoom", "slack", "telegram", "element", "signal", "skype", "jitsi",
-            "hexchat", "teams", "webex",
+            "discord",
+            "webcord",
+            "vesktop",
+            "teamspeak",
+            "ts3client",
+            "mumble",
+            "zoom",
+            "slack",
+            "telegram",
+            "element",
+            "signal",
+            "skype",
+            "jitsi",
+            "hexchat",
+            "teams",
+            "webex",
         ],
         Channel::Chat,
         "voice / chat",
     );
 
+    // Media players
     add(
         &[
-            "haruna", "vlc", "mpv", "celluloid", "smplayer", "totem", "dragon",
-            "spotify", "cider", "rhythmbox", "strawberry", "audacious", "elisa",
-            "amarok", "lollypop", "tauon", "deadbeef", "jellyfinmediaplayer",
+            "haruna",
+            "vlc",
+            "mpv",
+            "celluloid",
+            "smplayer",
+            "totem",
+            "dragon",
+            "spotify",
+            "cider",
+            "rhythmbox",
+            "strawberry",
+            "audacious",
+            "elisa",
+            "amarok",
+            "lollypop",
+            "tauon",
+            "deadbeef",
+            "jellyfinmediaplayer",
             "plexmediaplayer",
+            "plasma-browser-integration",
         ],
         Channel::Media,
         "media player",
     );
 
+    // Streaming / capture tools
     add(
         &["obs", "obs-studio", "obs64", "streamlabs"],
         Channel::Aux,
         "broadcast / aux",
     );
 
+    // Games / launchers (prefer game sink)
     add(
         &[
-            "steam", "steamwebhelper", "wine", "lutris", "heroic", "legendary",
-            "gamescope", "minecraft", "javaw", "cs2", "dota", "riotclient",
-            "league", "battle.net", "origin", "uplay", "epicgameslauncher",
+            "steam",
+            "steamwebhelper",
+            "wine",
+            "lutris",
+            "heroic",
+            "legendary",
+            "gamescope",
+            "minecraft",
+            "javaw", // often Minecraft
+            "cs2",
+            "dota",
+            "riotclient",
+            "league",
+            "battle.net",
+            "origin",
+            "uplay",
+            "epicgameslauncher",
         ],
         Channel::Game,
         "game / launcher",
@@ -139,11 +188,7 @@ fn builtin_rules() -> Vec<RouteRule> {
 }
 
 fn classify(name: &str, binary: &str, rules: &[RouteRule]) -> Channel {
-    let hay = format!(
-        "{} {}",
-        name.to_ascii_lowercase(),
-        binary.to_ascii_lowercase()
-    );
+    let hay = format!("{} {}", name.to_ascii_lowercase(), binary.to_ascii_lowercase());
     for rule in rules {
         let pat = rule.match_pattern.to_ascii_lowercase();
         if !pat.is_empty() && hay.contains(&pat) {
@@ -161,6 +206,7 @@ struct SinkInput {
     sink: String,
 }
 
+/// Parse `pactl list sink-inputs`.
 async fn list_sink_inputs() -> Result<Vec<SinkInput>, String> {
     let out = Command::new("pactl")
         .args(["list", "sink-inputs"])
@@ -198,13 +244,7 @@ async fn list_sink_inputs() -> Result<Vec<SinkInput>, String> {
     for line in text.lines() {
         let t = line.trim();
         if let Some(rest) = t.strip_prefix("Sink Input #") {
-            flush(
-                &mut items,
-                &mut cur_id,
-                &mut app_name,
-                &mut binary,
-                &mut sink,
-            );
+            flush(&mut items, &mut cur_id, &mut app_name, &mut binary, &mut sink);
             cur_id = rest.trim().parse().ok();
         } else if let Some(v) = t.strip_prefix("Sink:") {
             sink = v.trim().to_string();
@@ -220,13 +260,7 @@ async fn list_sink_inputs() -> Result<Vec<SinkInput>, String> {
             binary = v.trim().trim_matches('"').to_string();
         }
     }
-    flush(
-        &mut items,
-        &mut cur_id,
-        &mut app_name,
-        &mut binary,
-        &mut sink,
-    );
+    flush(&mut items, &mut cur_id, &mut app_name, &mut binary, &mut sink);
     Ok(items)
 }
 
@@ -262,6 +296,7 @@ pub struct RoutePassReport {
     pub actions: Vec<String>,
 }
 
+/// One routing pass: classify + move sink-inputs.
 pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
     let mut report = RoutePassReport::default();
     if !cfg.enabled {
@@ -277,6 +312,8 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
     };
 
     report.examined = inputs.len();
+
+    // Cache sink presence
     let mut sink_ok: HashMap<String, bool> = HashMap::new();
 
     for inp in inputs {
@@ -286,6 +323,7 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
             continue;
         };
 
+        // Already on target?
         if inp.sink.contains(target) {
             report.skipped += 1;
             continue;
@@ -305,14 +343,17 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
 
         match move_input(inp.id, target).await {
             Ok(()) => {
-                let label = if inp.app_name.is_empty() {
-                    inp.binary.as_str()
-                } else {
-                    inp.app_name.as_str()
-                };
                 let msg = format!(
                     "#{} «{}» ({}) → {} [{}]",
-                    inp.id, label, inp.binary, target, ch.as_str()
+                    inp.id,
+                    if inp.app_name.is_empty() {
+                        inp.binary.as_str()
+                    } else {
+                        inp.app_name.as_str()
+                    },
+                    inp.binary,
+                    target,
+                    ch.as_str()
                 );
                 info!("app route: {msg}");
                 report.actions.push(msg);
@@ -327,6 +368,7 @@ pub async fn route_pass(cfg: &AppRouteConfig) -> RoutePassReport {
     report
 }
 
+/// Background loop (every `interval_secs`).
 pub async fn run_loop(interval_secs: u64) {
     let cfg = load_config();
     let mut interval =

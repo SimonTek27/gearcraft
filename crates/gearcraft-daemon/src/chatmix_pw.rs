@@ -246,6 +246,8 @@ pub async fn setup_virtual_sinks() -> Result<String, String> {
     for (name, desc) in [
         ("gearcraft_game", "GearCraft_Game"),
         ("gearcraft_chat", "GearCraft_Chat"),
+        ("gearcraft_media", "GearCraft_Media"),
+        ("gearcraft_aux", "GearCraft_Aux"),
     ] {
         if list.lines().any(|l| l.contains(name)) {
             debug!("sink {name} already exists");
@@ -268,7 +270,7 @@ pub async fn setup_virtual_sinks() -> Result<String, String> {
 
     // Optional loopbacks so you can hear the mix on the default sink
     if std::env::var("GEARCRAFT_CHATMIX_LOOPBACK").as_deref() == Ok("1") {
-        for name in ["gearcraft_game", "gearcraft_chat"] {
+        for name in ["gearcraft_game", "gearcraft_chat", "gearcraft_media", "gearcraft_aux"] {
             let _ = run_out(
                 "pactl",
                 &[

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use gearcraft_core::AudioEffects;
 use tokio::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
 const NODE_NAME: &str = "gearcraft.dsp";
 const SINK_DESC: &str = "GearCraft DSP";
@@ -75,7 +75,7 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
 
     let mut push = |name: &str, label: &str, freq: f32, q: f32, gain: f32| {
         nodes.push(format!(
-            r#"{{"type":"builtin","name":"{name}","label":"{label}","control":{{"Freq":{freq:.2},"Q":{q:.3},"Gain":{gain:.2}}}}"#
+            r#"{{"type":"builtin","name":"{name}","label":"{label}","control":{{"Freq":{freq:.2},"Q":{q:.3},"Gain":{gain:.2}}}}}"#
         ));
         if let Some(ref p) = prev {
             links.push(format!(
@@ -108,12 +108,13 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
         push("gc_bass", "bq_lowshelf", 80.0, 0.7, fx.bass_boost_db);
     }
 
+    // Crossfeed: LADSPA bs2b when present
     if fx.crossfeed && fx.crossfeed_strength > 0 {
         if let Some(plugin) = find_bs2b_plugin() {
             let level = 1.0 + (fx.crossfeed_strength as f32 / 100.0) * 5.0;
             let name = "gc_bs2b";
             nodes.push(format!(
-                r#"{{"type":"ladspa","name":"{name}","plugin":"{plugin}","label":"bs2b","control":{{"Level":{level:.2}}}}"#
+                r#"{{"type":"ladspa","name":"{name}","plugin":"{plugin}","label":"bs2b","control":{{"Level":{level:.2}}}}}"#
             ));
             if let Some(ref p) = prev {
                 links.push(format!(
@@ -123,12 +124,13 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
             prev = Some(name.to_string());
             let _ = prev;
         } else {
+            // Soft stereo blend fallback
             let mix = (fx.crossfeed_strength as f32 / 100.0) * 0.35;
             let g1 = 1.0 - mix;
             let g2 = mix;
             let name = "gc_xf_mix";
             nodes.push(format!(
-                r#"{{"type":"builtin","name":"{name}","label":"mixer","control":{{"Gain 1":{g1:.3},"Gain 2":{g2:.3}}}}"#
+                r#"{{"type":"builtin","name":"{name}","label":"mixer","control":{{"Gain 1":{g1:.3},"Gain 2":{g2:.3}}}}}"#
             ));
             if let Some(ref p) = prev {
                 links.push(format!(
@@ -192,6 +194,8 @@ fn find_bs2b_plugin() -> Option<String> {
 }
 
 fn build_wpexec_lua(args_json: &str) -> String {
+    // Embed JSON as a Lua long string; LocalModule keeps the filter alive
+    // for the lifetime of this wpexec process.
     format!(
         r#"#!/usr/bin/env wpexec
 -- GearCraft DSP — WirePlumber filter-chain loader (generated, do not edit)
@@ -205,6 +209,7 @@ print("GearCraft: loading libpipewire-module-filter-chain via WirePlumber")
 filter_chain = LocalModule("libpipewire-module-filter-chain", args_string, {{}})
 print("GearCraft: filter-chain active (" .. "{NODE_NAME}" .. ")")
 
+-- Keep the script (and LocalModule) alive until the process is stopped.
 Core.idle_add(function()
   return true
 end)
@@ -217,6 +222,7 @@ async fn stop_running_wpexec() {
     if let Ok(s) = fs::read_to_string(&path) {
         if let Ok(pid) = s.trim().parse::<i32>() {
             if pid > 1 {
+                // SIGTERM
                 let _ = Command::new("kill")
                     .args(["-TERM", &pid.to_string()])
                     .stdout(Stdio::null())
@@ -235,6 +241,8 @@ async fn stop_running_wpexec() {
         }
     }
     let _ = fs::remove_file(&path);
+
+    // Also kill any stray gearcraft-dsp.lua wpexec
     let _ = Command::new("pkill")
         .args(["-f", "gearcraft-dsp.lua"])
         .stdout(Stdio::null())
@@ -243,6 +251,7 @@ async fn stop_running_wpexec() {
         .await;
 }
 
+/// Apply EQ/crossfeed by (re)loading a WirePlumber wpexec filter-chain.
 pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> {
     if fx.bypass {
         return clear_effects().await;
@@ -270,6 +279,7 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
     let lua_path = lua_script_path();
     fs::write(&lua_path, &lua).map_err(|e| format!("write {}: {e}", lua_path.display()))?;
 
+    // Ensure executable bit (nice for manual debug)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -288,8 +298,11 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
 
     let pid = child.id().ok_or_else(|| "wpexec pid unavailable".to_string())?;
     fs::write(pid_path(), pid.to_string()).map_err(|e| format!("write pid: {e}"))?;
+
+    // Detach: drop child without kill_on_drop waiting
     std::mem::forget(child);
 
+    // Brief wait so the node can appear
     tokio::time::sleep(Duration::from_millis(350)).await;
 
     let mut message = format!(
@@ -301,6 +314,7 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
         message.push_str("; crossfeed: LADSPA bs2b");
     }
 
+    // Optional: set as default sink via wpctl if GEARCRAFT_DSP_DEFAULT=1
     if std::env::var("GEARCRAFT_DSP_DEFAULT").as_deref() == Ok("1") {
         if let Some(id) = find_sink_id_wpctl().await {
             let _ = Command::new("wpctl")
@@ -327,6 +341,7 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
 pub async fn clear_effects() -> Result<DspApplyResult, String> {
     stop_running_wpexec().await;
     let _ = fs::remove_file(lua_script_path());
+    // Keep filter-chain.json for debugging
     Ok(DspApplyResult {
         applied: false,
         eq: false,
@@ -350,7 +365,9 @@ async fn wpexec_available() -> bool {
 
 fn which_exists(bin: &str) -> bool {
     std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|dir| dir.join(bin).exists()))
+        .map(|p| {
+            std::env::split_paths(&p).any(|dir| dir.join(bin).exists())
+        })
         .unwrap_or(false)
 }
 
@@ -363,8 +380,10 @@ async fn find_sink_id_wpctl() -> Option<String> {
         .await
         .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
+    // Look for lines containing GearCraft DSP and a numeric id
     for line in text.lines() {
         if line.contains(SINK_DESC) || line.contains(NODE_NAME) {
+            // e.g. " │  42. GearCraft DSP"
             let trimmed = line.trim_start_matches(['│', ' ', '*', '.']);
             let id: String = trimmed
                 .chars()
@@ -373,6 +392,7 @@ async fn find_sink_id_wpctl() -> Option<String> {
             if !id.is_empty() {
                 return Some(id);
             }
+            // fallback: first number on the line
             for tok in line.split_whitespace() {
                 let t = tok.trim_matches(|c: char| !c.is_ascii_digit());
                 if !t.is_empty() && t.chars().all(|c| c.is_ascii_digit()) {
@@ -388,7 +408,9 @@ pub async fn dsp_status() -> serde_json::Value {
     let pid_alive = fs::read_to_string(pid_path())
         .ok()
         .and_then(|s| s.trim().parse::<i32>().ok())
-        .map(|pid| PathBuf::from(format!("/proc/{pid}")).exists())
+        .map(|pid| {
+            PathBuf::from(format!("/proc/{pid}")).exists()
+        })
         .unwrap_or(false);
 
     serde_json::json!({

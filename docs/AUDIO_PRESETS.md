@@ -5,18 +5,15 @@ GearCraft stores **named audio presets** and **device→preset rules** the same 
 `--load-preset`, `--save-preset`, `--delete-preset`, `--list-preset-rules`, …).
 
 Goal: replace JamesDSP for day-to-day preset workflow on PipeWire, while the
-actual DSP engine (EQ/crossfeed/convolver) is applied via WirePlumber (`wpexec`).
+actual DSP engine (EQ/crossfeed/convolver) is applied via a staged bridge
+(EasyEffects / native PipeWire filter-chain).
 
 ## Storage
 
 ```
 ~/.config/gearcraft/
 ├── audio_presets.json   # array of AudioPreset
-├── preset_rules.json    # array of PresetRule
-└── dsp/
-    ├── gearcraft-dsp.lua    # generated wpexec script
-    ├── filter-chain.json    # SPA-JSON module args
-    └── wpexec.pid           # loader PID
+└── preset_rules.json    # array of PresetRule
 ```
 
 ### AudioPreset
@@ -56,12 +53,18 @@ EQ is a **10-band graphic** list (`freq_hz` + `gain_db`) portable to FIR/IIR bac
 
 1. Resolve preset by id.
 2. If `chatmix` is set → update daemon state, persist, `apply_volumes` on Game/Chat sinks.
-3. **WirePlumber DSP bridge** (`dsp_pw`): `wpexec` loads filter-chain (no PipeWire restart).
-4. Return payload with `dsp_engine: "wireplumber-wpexec"`.
+3. **PipeWire DSP bridge** (`dsp_pw`): write filter-chain conf and reload user PipeWire session.
+4. Return payload with `dsp_engine: "pipewire-filter-chain"`.
 
 ### WirePlumber EQ + crossfeed
 
-Backend: **`wpexec`** loads `libpipewire-module-filter-chain`.
+Backend: **`wpexec`** loads `libpipewire-module-filter-chain` (no PipeWire restart).
+
+| Path | Role |
+|------|------|
+| `~/.config/gearcraft/dsp/gearcraft-dsp.lua` | Generated WirePlumber script |
+| `~/.config/gearcraft/dsp/filter-chain.json` | SPA-JSON module args |
+| `~/.config/gearcraft/dsp/wpexec.pid` | Running loader PID |
 
 Virtual sink: **GearCraft DSP** (`gearcraft.dsp`) with `filter.smart=true`.
 
@@ -74,12 +77,16 @@ Virtual sink: **GearCraft DSP** (`gearcraft.dsp`) with `filter.smart=true`.
 
 ```bash
 # Requires wireplumber (wpexec + wpctl)
+# Optional true BS2B: ladspa-bs2b package
+
+# Load a preset in Sonar → sink appears; then:
 wpctl status | grep -i gearcraft
 wpctl set-default <id>
 
 # Auto-set default after apply:
 GEARCRAFT_DSP_DEFAULT=1 cargo run -p gearcraft-daemon
 ```
+
 
 ### Built-in presets
 
@@ -99,7 +106,7 @@ Sonar page → **PRESET AUDIO** panel: list, load, delete, save current ChatMix 
 - [x] Preset CRUD + disk persistence
 - [x] Device rules data model + IPC
 - [x] ChatMix apply on load
-- [x] WirePlumber filter-chain bridge for EQ + crossfeed (`dsp_pw`)
+- [x] PipeWire filter-chain bridge for EQ + crossfeed (`dsp_pw`)
 - [ ] Auto-apply rules on headset hotplug
 - [ ] AutoEQ import
 - [ ] Convolver IR attach

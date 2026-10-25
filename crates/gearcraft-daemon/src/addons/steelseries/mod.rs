@@ -2,7 +2,7 @@
 //!
 //! | Family   | Protocol module | Capabilities              |
 //! |----------|-----------------|---------------------------|
-//! | Rival 3  | rival3          | RGB zones, polling, effect|
+//! | Rival 3/5| rival3          | RGB zones, polling, effect|
 //! | Apex 3/5 | apex            | Multi-zone keyboard RGB   |
 //! | Arctis 7 | arctis          | Battery / connection query|
 
@@ -248,5 +248,26 @@ mod tests {
         let r = apex_direct_color_report(&c);
         assert!(r.len() >= 10);
         assert_eq!(r[0], 0x21);
+    }
+
+    /// Every PID advertised in the known-device table must be handled by a
+    /// protocol family, otherwise live detection would fall back to generic.
+    #[test]
+    fn known_pids_have_a_protocol_family() {
+        for (pid, name, _kind) in crate::usb::KNOWN_STEELSERIES {
+            assert!(
+                is_rival3_family(*pid) || is_apex_family(*pid) || is_arctis_family(*pid),
+                "{name} (0x{pid:04X}) has no protocol family"
+            );
+        }
+    }
+
+    #[test]
+    fn rival5_is_rival3_family() {
+        assert!(is_rival3_family(0x183C));
+        assert_eq!(
+            rival3_color_report(0x00, &RgbColor { r: 1, g: 2, b: 3 }, 100),
+            vec![0x05, 0x00, 0x00, 1, 2, 3, 0x64]
+        );
     }
 }

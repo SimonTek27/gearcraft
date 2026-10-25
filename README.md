@@ -29,7 +29,7 @@ gearcraft/
 ├── crates/
 │   ├── gearcraft-core/        # types + PeripheralAddon trait + IPC messages
 │   ├── gearcraft-daemon/      # background service + brand addons
-│   └── gearcraft-ui/          # Slint desktop UI
+│   └── gearcraft-ui/          # Slint desktop UI
 ├── docs/
 │   ├── devices.md             # device matrix by category
 │   └── CHATMIX.md
@@ -70,11 +70,11 @@ Requires a working Slint stack (Rust, system libs for the Slint backend — e.g.
 ## Install daemon (systemd)
 
 ```bash
-# demo build
+# install daemon (live USB built in) + udev rules
 sudo ./packaging/install.sh
 
-# with live USB
-FEATURES=hidapi sudo -E ./packaging/install.sh
+# demo-only build (no HID, for machines without peripherals)
+cargo build -p gearcraft-daemon --no-default-features
 
 sudo systemctl enable --now gearcraft-daemon
 ```

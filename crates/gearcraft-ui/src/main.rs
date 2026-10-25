@@ -3,7 +3,7 @@
 mod ipc;
 
 use serde_json::Value;
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{Model, ModelRc, SharedString, VecModel};
 use tracing::info;
 
 slint::include_modules!();
@@ -34,6 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_select_device(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             ui.set_selected_device_id(id.clone());
+            // Find name from current model
             let devices = ui.get_devices();
             let mut name = SharedString::from("—");
             for i in 0..devices.row_count() {
@@ -45,6 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             ui.set_selected_device_name(name);
+            // Auto-rule flags depend on the selected device
+            refresh_audio_presets(&ui);
         }
     });
 
@@ -111,6 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             update_channel(&ui, id.as_str(), |ch| {
                 ch.volume = vol;
             });
+            // Drive ChatMix from game/chat faders
             if id == "game" || id == "chat" {
                 let (game, chat) = channel_volumes(&ui);
                 let sum = game + chat;
@@ -156,6 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_sonar_enabled(!ui.get_sonar_enabled());
         }
     });
+
 
     let ui_weak = ui.as_weak();
     ui.on_refresh_presets(move || {
@@ -249,8 +254,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_preset_rule(move |preset_id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let device_id = ui.get_selected_device_id().to_string();
+            if device_id.is_empty() {
+                ui.set_status_text(SharedString::from("Select a device first"));
+                return;
+            }
+            let preset_id = preset_id.to_string();
+            let device_name = ui.get_selected_device_name().to_string();
+            match auto_rule_for(&device_id) {
+                Ok(Some(current)) if current == preset_id => {
+                    // Rule already points at this preset → remove it
+                    match ipc::delete_preset_rule(&device_id, "") {
+                        Ok(_) => ui.set_status_text(SharedString::from(format!(
+                            "Auto-apply removed for {device_name}"
+                        ))),
+                        Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+                    }
+                }
+                Ok(_) => {
+                    // Create / replace the rule for this device
+                    let rule = gearcraft_core::PresetRule {
+                        device_id: device_id.clone(),
+                        device_name,
+                        route_id: String::new(),
+                        preset_id: preset_id.clone(),
+                    };
+                    match ipc::set_preset_rule(rule) {
+                        Ok(_) => {
+                            let name = ui
+                                .get_presets()
+                                .iter()
+                                .find(|p| p.id.as_str() == preset_id)
+                                .map(|p| p.name.to_string())
+                                .unwrap_or(preset_id);
+                            ui.set_status_text(SharedString::from(format!(
+                                "Auto-apply set: {name}"
+                            )));
+                        }
+                        Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+                    }
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+            refresh_audio_presets(&ui);
+        }
+    });
+
+    // Hotplug poll: keep the device list fresh without a dedicated tab
+    let poll = slint::Timer::default();
+    let ui_weak = ui.as_weak();
+    poll.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(15),
+        move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                refresh(&ui);
+                refresh_chatmix(&ui);
+                refresh_audio_presets(&ui);
+            }
+        },
+    );
+
     info!("GearCraft UI (Slint) starting");
     ui.run()?;
+    poll.stop();
     Ok(())
 }
 
@@ -325,7 +395,10 @@ fn refresh_chatmix(ui: &App) {
 }
 
 fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
-    let balance = v.get("balance").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
+    let balance = v
+        .get("balance")
+        .and_then(|x| x.as_i64())
+        .unwrap_or(0) as i32;
     let game = v
         .get("game_volume")
         .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
@@ -334,8 +407,14 @@ fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
         .get("chat_volume")
         .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
         .unwrap_or(100) as i32;
-    let backend = v.get("backend").and_then(|x| x.as_str()).unwrap_or("—");
-    let ready = v.get("available").and_then(|x| x.as_bool()).unwrap_or(false);
+    let backend = v
+        .get("backend")
+        .and_then(|x| x.as_str())
+        .unwrap_or("—");
+    let ready = v
+        .get("available")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
 
     ui.set_chatmix_balance(balance);
     ui.set_game_volume(game.clamp(0, 100));
@@ -347,7 +426,7 @@ fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
     update_channel(ui, "chat", |ch| ch.volume = chat.clamp(0, 100));
 }
 
-fn update_channel(ui: &App, id: &str, f: impl FnOnce(&mut ChannelRow)) {
+fn update_channel(ui: &App, id: &str, mut f: impl FnMut(&mut ChannelRow)) {
     let model = ui.get_channels();
     let mut rows = Vec::new();
     for i in 0..model.row_count() {
@@ -378,7 +457,43 @@ fn channel_volumes(ui: &App) -> (i32, i32) {
     (game, chat)
 }
 
+/// Preset id bound to `device_id` by an auto-apply rule (exact route wins,
+/// then the route-less rule). Err when the daemon can't be reached.
+fn auto_rule_for(device_id: &str) -> Result<Option<String>, ipc::IpcError> {
+    let rules = ipc::list_preset_rules()?;
+    let Value::Array(rules) = rules else {
+        return Ok(None);
+    };
+    let mut route_less: Option<String> = None;
+    for r in &rules {
+        let d = r.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
+        if d != device_id {
+            continue;
+        }
+        let preset = r
+            .get("preset_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let route = r.get("route_id").and_then(|v| v.as_str()).unwrap_or("");
+        if route.is_empty() {
+            return Ok(Some(preset));
+        }
+        if route_less.is_none() {
+            route_less = Some(preset);
+        }
+    }
+    Ok(route_less)
+}
+
 fn refresh_audio_presets(ui: &App) {
+    let selected = ui.get_selected_device_id().to_string();
+    let auto_id = if selected.is_empty() {
+        None
+    } else {
+        auto_rule_for(&selected).unwrap_or(None)
+    };
+
     match ipc::list_audio_presets() {
         Ok(Value::Array(arr)) => {
             let mut rows = Vec::new();
@@ -403,11 +518,13 @@ fn refresh_audio_presets(ui: &App) {
                     .and_then(|e| e.get("eq_enabled"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
+                let is_auto = auto_id.as_deref() == Some(id.as_str());
                 rows.push(PresetRow {
                     id: SharedString::from(id),
                     name: SharedString::from(name),
                     notes: SharedString::from(notes),
                     eq_enabled: eq,
+                    auto: is_auto,
                 });
             }
             ui.set_presets(ModelRc::new(VecModel::from(rows)));

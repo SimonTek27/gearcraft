@@ -73,6 +73,7 @@ pub trait PeripheralAddon: Send + Sync {
     }
 }
 
+
 // ---------------------------------------------------------------------------
 // Macros & ChatMix
 // ---------------------------------------------------------------------------
@@ -122,11 +123,13 @@ impl Default for ChatMixState {
     }
 }
 
+
 // ---------------------------------------------------------------------------
 // Audio presets (JDSP4Linux-style — GearCraft aims to replace JamesDSP)
 // ---------------------------------------------------------------------------
 
-/// One graphic-EQ band (Hz + gain dB).
+/// One graphic-EQ band (Hz + gain dB). JamesDSP uses FIR/IIR multimodal EQ;
+/// we persist a portable band list that can drive PipeWire / EasyEffects later.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqBand {
     pub freq_hz: f32,
@@ -135,6 +138,7 @@ pub struct EqBand {
 }
 
 fn default_eq_bands() -> Vec<EqBand> {
+    // 10-band ISO-ish centres
     [31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
         .into_iter()
         .map(|freq_hz| EqBand {
@@ -144,7 +148,7 @@ fn default_eq_bands() -> Vec<EqBand> {
         .collect()
 }
 
-/// Effect toggles / parameters stored with a preset.
+/// Effect toggles / parameters stored with a preset (DSP engine TBD).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioEffects {
     #[serde(default)]
@@ -161,6 +165,7 @@ pub struct AudioEffects {
     pub reverb: bool,
     #[serde(default)]
     pub crossfeed: bool,
+    /// 0 = off … 100 = strong (BS2B-style)
     #[serde(default)]
     pub crossfeed_strength: u8,
     #[serde(default)]
@@ -206,18 +211,22 @@ pub struct AudioPreset {
     pub name: String,
     #[serde(default)]
     pub effects: AudioEffects,
+    /// Optional ChatMix snapshot applied on load
     #[serde(default)]
     pub chatmix: Option<ChatMixState>,
+    /// Free-form notes
     #[serde(default)]
     pub notes: String,
 }
 
-/// Auto-apply a preset when a given output / headset is active.
+/// Auto-apply a preset when a given output / headset is active (JDSP rules).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetRule {
+    /// Device id (GearCraft device id or PipeWire sink name)
     pub device_id: String,
     #[serde(default)]
     pub device_name: String,
+    /// Optional route (e.g. headphone vs speaker on same card)
     #[serde(default)]
     pub route_id: String,
     pub preset_id: String,
@@ -325,7 +334,7 @@ pub enum IpcCommand {
     /// List saved audio presets (JDSP-style)
     ListAudioPresets,
 
-    /// Load audio preset by id and apply (ChatMix + WirePlumber DSP)
+    /// Load audio preset by id and apply (ChatMix + effects state)
     LoadAudioPreset { preset_id: String },
 
     /// Save / upsert audio preset

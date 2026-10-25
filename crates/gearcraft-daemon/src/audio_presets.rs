@@ -3,7 +3,7 @@
 //! Persists named EQ/effects presets and device→preset rules under
 //! `~/.config/gearcraft/audio_presets.json` and `preset_rules.json`.
 //!
-//! ChatMix is applied immediately; EQ/crossfeed go through the WirePlumber
+//! ChatMix is applied immediately; EQ/crossfeed go through the PipeWire
 //! filter-chain bridge (`dsp_pw`) so GearCraft can replace JDSP4Linux.
 
 use std::collections::HashMap;
@@ -167,6 +167,7 @@ impl AudioPresetStore {
         Ok(removed)
     }
 
+    /// Resolve which preset should apply for a device (exact route, then any route).
     pub fn rule_for(&self, device_id: &str, route_id: &str) -> Option<&AudioPreset> {
         let pid = self
             .rules
@@ -225,6 +226,7 @@ fn fps_eq() -> Vec<EqBand> {
     let freqs = [
         31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
     ];
+    // Mild scoop + upper-mid for footsteps
     let gains = [1.0, 0.5, -1.0, -2.0, -1.0, 1.5, 3.0, 2.0, 1.0, 0.0];
     freqs
         .iter()
@@ -233,6 +235,7 @@ fn fps_eq() -> Vec<EqBand> {
         .collect()
 }
 
+/// Apply preset side-effects that the daemon can handle today (ChatMix).
 pub async fn apply_preset_runtime(preset: &AudioPreset) -> Result<serde_json::Value, String> {
     let mut applied = serde_json::json!({
         "preset_id": preset.id,

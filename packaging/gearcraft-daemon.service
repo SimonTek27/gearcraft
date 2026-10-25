@@ -9,8 +9,8 @@ ExecStart=/usr/bin/gearcraft-daemon
 Restart=on-failure
 RestartSec=2
 Environment=RUST_LOG=info
-# Uncomment for live USB (requires binary built with --features hidapi)
-# Environment=GEARCRAFT_DRY=0
+# Live HID scan is on by default; force demo devices with:
+# Environment=GEARCRAFT_DRY=1
 
 # Hardening
 NoNewPrivileges=true

@@ -23,6 +23,7 @@ This table is the living matrix of targets and status. Categories follow typical
 | SteelSeries | Rival 3 Wireless | `0x1038` | `0x1830` | 🟡 | 🟡 | ⬜ | 🟡 | `steelseries` |
 | SteelSeries | Rival 3 Gen 2 | `0x1038` | `0x1870` | 🟡 | 🟡 | ⬜ | 🟡 | `steelseries` |
 | SteelSeries | Rival 3 Wireless Gen 2 | `0x1038` | `0x1872` | 🟡 | 🟡 | ⬜ | 🟡 | `steelseries` |
+| SteelSeries | Rival 5 | `0x1038` | `0x183C` | ✅ zones | 🟡 | ⬜ | 🟡 | `steelseries` |
 | Razer | (DeathAdder / Viper family) | `0x1532` | — | ⬜ | ⬜ | ⬜ | ⬜ | planned |
 | Logitech | (G Pro / G502 family) | `0x046D` | — | ⬜ | ⬜ | ⬜ | ⬜ | planned |
 | Corsair | (M65 / Sabre family) | `0x1B1C` | — | ⬜ | ⬜ | ⬜ | ⬜ | planned |
