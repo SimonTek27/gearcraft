@@ -3,7 +3,7 @@
 mod ipc;
 
 use serde_json::Value;
-use slint::{Model, ModelRc, SharedString, VecModel};
+use slint::{ModelRc, SharedString, VecModel};
 use tracing::info;
 
 slint::include_modules!();
@@ -20,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     refresh(&ui);
     refresh_chatmix(&ui);
     refresh_audio_presets(&ui);
+    refresh_device_manager(&ui);
 
     let ui_weak = ui.as_weak();
     ui.on_refresh_devices(move || {
@@ -27,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             refresh(&ui);
             refresh_chatmix(&ui);
             refresh_audio_presets(&ui);
+            refresh_device_manager(&ui);
         }
     });
 
@@ -34,7 +36,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_select_device(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             ui.set_selected_device_id(id.clone());
-            // Find name from current model
             let devices = ui.get_devices();
             let mut name = SharedString::from("—");
             for i in 0..devices.row_count() {
@@ -46,8 +47,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             ui.set_selected_device_name(name);
-            // Auto-rule flags depend on the selected device
-            refresh_audio_presets(&ui);
         }
     });
 
@@ -75,18 +74,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui_weak = ui.as_weak();
     ui.on_set_chatmix(move |balance| {
         if let Some(ui) = ui_weak.upgrade() {
-            if !ui.get_sonar_enabled() {
-                return;
-            }
-            let b = balance.clamp(-100, 100) as i8;
-            match ipc::set_chatmix(b) {
-                Ok(v) => apply_chatmix_json(&ui, &v),
-                Err(e) => {
-                    ui.set_chatmix_balance(b as i32);
-                    ui.set_game_volume(((100 + b as i32) / 2).clamp(0, 100));
-                    ui.set_chat_volume(((100 - b as i32) / 2).clamp(0, 100));
-                    ui.set_status_text(SharedString::from(e.to_string()));
+            let bal = balance.clamp(-100, 100) as i8;
+            match ipc::set_chatmix(bal) {
+                Ok(v) => {
+                    ui.set_chatmix_balance(bal as i32);
+                    if let Some(g) = v.get("game_volume").and_then(|x| x.as_u64()) {
+                        ui.set_game_volume(g as i32);
+                    }
+                    if let Some(c) = v.get("chat_volume").and_then(|x| x.as_u64()) {
+                        ui.set_chat_volume(c as i32);
+                    }
+                    refresh_chatmix(&ui);
                 }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
             }
         }
     });
@@ -102,6 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or("sinks ready");
                     ui.set_status_text(SharedString::from(msg));
                     refresh_chatmix(&ui);
+                    refresh_device_manager(&ui);
                 }
                 Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
             }
@@ -111,39 +112,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui_weak = ui.as_weak();
     ui.on_channel_volume(move |id, vol| {
         if let Some(ui) = ui_weak.upgrade() {
-            update_channel(&ui, id.as_str(), |ch| {
-                ch.volume = vol;
-            });
-            // Drive ChatMix from game/chat faders
-            if id == "game" || id == "chat" {
-                let (game, chat) = channel_volumes(&ui);
-                let sum = game + chat;
-                let balance = if sum == 0 {
-                    0
-                } else {
-                    (((game - chat) as f32 / sum as f32) * 100.0).round() as i32
-                };
-                let b = balance.clamp(-100, 100) as i8;
-                let _ = ipc::set_chatmix(b).map(|v| apply_chatmix_json(&ui, &v));
-            }
+            update_channel(&ui, id.as_str(), |ch| ch.volume = vol.clamp(0, 100));
         }
     });
 
     let ui_weak = ui.as_weak();
     ui.on_channel_mute(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
-            update_channel(&ui, id.as_str(), |ch| {
-                ch.muted = !ch.muted;
-            });
+            update_channel(&ui, id.as_str(), |ch| ch.muted = !ch.muted);
         }
     });
 
     let ui_weak = ui.as_weak();
     ui.on_channel_solo(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
-            update_channel(&ui, id.as_str(), |ch| {
-                ch.solo = !ch.solo;
-            });
+            update_channel(&ui, id.as_str(), |ch| ch.solo = !ch.solo);
         }
     });
 
@@ -160,7 +143,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_sonar_enabled(!ui.get_sonar_enabled());
         }
     });
-
 
     let ui_weak = ui.as_weak();
     ui.on_refresh_presets(move || {
@@ -180,16 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or("preset");
                     ui.set_active_preset_id(id.clone());
                     ui.set_active_preset_name(SharedString::from(name));
-                    let dsp = v
-                        .get("dsp_message")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("");
-                    let msg = if dsp.is_empty() {
-                        format!("Preset loaded: {name}")
-                    } else {
-                        format!("Preset «{name}» — {dsp}")
-                    };
-                    ui.set_status_text(SharedString::from(msg));
+                    ui.set_status_text(SharedString::from(format!("Preset loaded: {name}")));
                     refresh_chatmix(&ui);
                     refresh_audio_presets(&ui);
                 }
@@ -227,9 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             match ipc::save_audio_preset(preset) {
                 Ok(_) => {
-                    ui.set_active_preset_id(SharedString::from(id));
-                    ui.set_active_preset_name(SharedString::from(name.clone()));
-                    ui.set_status_text(SharedString::from(format!("Preset saved: {name}")));
+                    ui.set_status_text(SharedString::from(format!("Saved preset {name}")));
                     refresh_audio_presets(&ui);
                 }
                 Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
@@ -242,10 +213,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = ui_weak.upgrade() {
             match ipc::delete_audio_preset(id.as_str()) {
                 Ok(_) => {
-                    if ui.get_active_preset_id() == id {
-                        ui.set_active_preset_id(SharedString::from(""));
-                        ui.set_active_preset_name(SharedString::from("—"));
-                    }
                     ui.set_status_text(SharedString::from("Preset deleted"));
                     refresh_audio_presets(&ui);
                 }
@@ -255,72 +222,100 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak = ui.as_weak();
-    ui.on_toggle_preset_rule(move |preset_id| {
+    ui.on_refresh_device_manager(move || {
         if let Some(ui) = ui_weak.upgrade() {
-            let device_id = ui.get_selected_device_id().to_string();
-            if device_id.is_empty() {
-                ui.set_status_text(SharedString::from("Select a device first"));
-                return;
-            }
-            let preset_id = preset_id.to_string();
-            let device_name = ui.get_selected_device_name().to_string();
-            match auto_rule_for(&device_id) {
-                Ok(Some(current)) if current == preset_id => {
-                    // Rule already points at this preset → remove it
-                    match ipc::delete_preset_rule(&device_id, "") {
-                        Ok(_) => ui.set_status_text(SharedString::from(format!(
-                            "Auto-apply removed for {device_name}"
-                        ))),
-                        Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
-                    }
-                }
-                Ok(_) => {
-                    // Create / replace the rule for this device
-                    let rule = gearcraft_core::PresetRule {
-                        device_id: device_id.clone(),
-                        device_name,
-                        route_id: String::new(),
-                        preset_id: preset_id.clone(),
-                    };
-                    match ipc::set_preset_rule(rule) {
-                        Ok(_) => {
-                            let name = ui
-                                .get_presets()
-                                .iter()
-                                .find(|p| p.id.as_str() == preset_id)
-                                .map(|p| p.name.to_string())
-                                .unwrap_or(preset_id);
-                            ui.set_status_text(SharedString::from(format!(
-                                "Auto-apply set: {name}"
-                            )));
-                        }
-                        Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
-                    }
-                }
-                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
-            }
-            refresh_audio_presets(&ui);
+            refresh_device_manager(&ui);
         }
     });
 
-    // Hotplug poll: keep the device list fresh without a dedicated tab
-    let poll = slint::Timer::default();
     let ui_weak = ui.as_weak();
-    poll.start(
-        slint::TimerMode::Repeated,
-        std::time::Duration::from_secs(15),
-        move || {
-            if let Some(ui) = ui_weak.upgrade() {
-                refresh(&ui);
-                refresh_chatmix(&ui);
-                refresh_audio_presets(&ui);
+    ui.on_select_output_device(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_selected_output_id(id.clone());
+            let model = ui.get_output_devices();
+            let mut label = SharedString::from("—");
+            for i in 0..model.row_count() {
+                if let Some(row) = model.row_data(i) {
+                    if row.id == id {
+                        label = row.label;
+                        break;
+                    }
+                }
             }
-        },
-    );
+            ui.set_selected_output_label(label);
+        }
+    });
 
-    info!("GearCraft UI (Slint) starting");
+    let ui_weak = ui.as_weak();
+    ui.on_assign_channel_device(move |channel| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let dev_id = ui.get_selected_output_id().to_string();
+            if dev_id.is_empty() {
+                ui.set_status_text(SharedString::from("Select an output device first"));
+                return;
+            }
+            let ch = channel.to_string();
+            let channel_id = match ch.as_str() {
+                "game" => gearcraft_core::SonarChannelId::Game,
+                "chat" => gearcraft_core::SonarChannelId::Chat,
+                "media" => gearcraft_core::SonarChannelId::Media,
+                "aux" => gearcraft_core::SonarChannelId::Aux,
+                _ => {
+                    ui.set_status_text(SharedString::from("Unknown channel"));
+                    return;
+                }
+            };
+            let policy = gearcraft_core::ChannelDevicePolicy {
+                channel: channel_id,
+                priority: vec![dev_id],
+                excluded: vec![],
+                active_device_id: None,
+            };
+            match ipc::set_channel_device_policy(policy) {
+                Ok(_) => {
+                    ui.set_status_text(SharedString::from(format!("Assigned output to {ch}")));
+                    refresh_device_manager(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_link_all_outputs(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let enabled = !ui.get_link_all_devices();
+            let dev = ui.get_selected_output_id().to_string();
+            let device_id = if dev.is_empty() { None } else { Some(dev) };
+            match ipc::link_all_devices(device_id, enabled) {
+                Ok(_) => {
+                    ui.set_link_all_devices(enabled);
+                    ui.set_status_text(SharedString::from(if enabled {
+                        "Link all channels: ON"
+                    } else {
+                        "Link all channels: OFF"
+                    }));
+                    refresh_device_manager(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_apply_device_manager(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            match ipc::apply_device_manager() {
+                Ok(_) => {
+                    ui.set_status_text(SharedString::from("Device Manager applied"));
+                    refresh_device_manager(&ui);
+                }
+                Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+            }
+        }
+    });
+
     ui.run()?;
-    poll.stop();
     Ok(())
 }
 
@@ -342,11 +337,7 @@ fn refresh(ui: &App) {
         Ok(Value::Array(arr)) => {
             let mut rows = Vec::new();
             for item in arr {
-                let id = item
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let name = item
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -362,24 +353,14 @@ fn refresh(ui: &App) {
                     .and_then(|v| v.as_str())
                     .unwrap_or("other")
                     .to_string();
-                let path = item
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("—");
                 rows.push(DeviceRow {
-                    id: id.into(),
-                    name: name.into(),
-                    vendor: vendor.into(),
-                    kind: kind.into(),
+                    id: SharedString::from(id),
+                    name: SharedString::from(name),
+                    vendor: SharedString::from(vendor),
+                    kind: SharedString::from(kind),
                     online: true,
-                    detail: path.into(),
+                    detail: SharedString::from(""),
                 });
-            }
-            if ui.get_selected_device_id().is_empty() {
-                if let Some(first) = rows.first() {
-                    ui.set_selected_device_id(first.id.clone());
-                    ui.set_selected_device_name(first.name.clone());
-                }
             }
             ui.set_devices(ModelRc::new(VecModel::from(rows)));
         }
@@ -389,44 +370,26 @@ fn refresh(ui: &App) {
 }
 
 fn refresh_chatmix(ui: &App) {
-    if let Ok(v) = ipc::get_chatmix() {
-        apply_chatmix_json(ui, &v);
+    match ipc::get_chatmix() {
+        Ok(v) => {
+            let balance = v.get("balance").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
+            let game = v.get("game_volume").and_then(|x| x.as_u64()).unwrap_or(100) as i32;
+            let chat = v.get("chat_volume").and_then(|x| x.as_u64()).unwrap_or(100) as i32;
+            ui.set_chatmix_balance(balance);
+            ui.set_game_volume(game);
+            ui.set_chat_volume(chat);
+            ui.set_chatmix_ready(true);
+            ui.set_chatmix_backend(SharedString::from("pipewire"));
+            update_channel(ui, "game", |ch| ch.volume = game.clamp(0, 100));
+            update_channel(ui, "chat", |ch| ch.volume = chat.clamp(0, 100));
+        }
+        Err(_) => {
+            ui.set_chatmix_ready(false);
+        }
     }
 }
 
-fn apply_chatmix_json(ui: &App, v: &serde_json::Value) {
-    let balance = v
-        .get("balance")
-        .and_then(|x| x.as_i64())
-        .unwrap_or(0) as i32;
-    let game = v
-        .get("game_volume")
-        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
-        .unwrap_or(100) as i32;
-    let chat = v
-        .get("chat_volume")
-        .and_then(|x| x.as_u64().or_else(|| x.as_f64().map(|f| f as u64)))
-        .unwrap_or(100) as i32;
-    let backend = v
-        .get("backend")
-        .and_then(|x| x.as_str())
-        .unwrap_or("—");
-    let ready = v
-        .get("available")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-
-    ui.set_chatmix_balance(balance);
-    ui.set_game_volume(game.clamp(0, 100));
-    ui.set_chat_volume(chat.clamp(0, 100));
-    ui.set_chatmix_backend(SharedString::from(backend));
-    ui.set_chatmix_ready(ready);
-
-    update_channel(ui, "game", |ch| ch.volume = game.clamp(0, 100));
-    update_channel(ui, "chat", |ch| ch.volume = chat.clamp(0, 100));
-}
-
-fn update_channel(ui: &App, id: &str, mut f: impl FnMut(&mut ChannelRow)) {
+fn update_channel(ui: &App, id: &str, f: impl FnOnce(&mut ChannelRow)) {
     let model = ui.get_channels();
     let mut rows = Vec::new();
     for i in 0..model.row_count() {
@@ -440,69 +403,12 @@ fn update_channel(ui: &App, id: &str, mut f: impl FnMut(&mut ChannelRow)) {
     ui.set_channels(ModelRc::new(VecModel::from(rows)));
 }
 
-fn channel_volumes(ui: &App) -> (i32, i32) {
-    let model = ui.get_channels();
-    let mut game = 100;
-    let mut chat = 100;
-    for i in 0..model.row_count() {
-        if let Some(row) = model.row_data(i) {
-            if row.id == "game" {
-                game = row.volume;
-            }
-            if row.id == "chat" {
-                chat = row.volume;
-            }
-        }
-    }
-    (game, chat)
-}
-
-/// Preset id bound to `device_id` by an auto-apply rule (exact route wins,
-/// then the route-less rule). Err when the daemon can't be reached.
-fn auto_rule_for(device_id: &str) -> Result<Option<String>, ipc::IpcError> {
-    let rules = ipc::list_preset_rules()?;
-    let Value::Array(rules) = rules else {
-        return Ok(None);
-    };
-    let mut route_less: Option<String> = None;
-    for r in &rules {
-        let d = r.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-        if d != device_id {
-            continue;
-        }
-        let preset = r
-            .get("preset_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let route = r.get("route_id").and_then(|v| v.as_str()).unwrap_or("");
-        if route.is_empty() {
-            return Ok(Some(preset));
-        }
-        if route_less.is_none() {
-            route_less = Some(preset);
-        }
-    }
-    Ok(route_less)
-}
-
 fn refresh_audio_presets(ui: &App) {
-    let selected = ui.get_selected_device_id().to_string();
-    let auto_id = if selected.is_empty() {
-        None
-    } else {
-        auto_rule_for(&selected).unwrap_or(None)
-    };
-
     match ipc::list_audio_presets() {
         Ok(Value::Array(arr)) => {
             let mut rows = Vec::new();
             for item in arr {
-                let id = item
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let name = item
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -518,18 +424,103 @@ fn refresh_audio_presets(ui: &App) {
                     .and_then(|e| e.get("eq_enabled"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let is_auto = auto_id.as_deref() == Some(id.as_str());
                 rows.push(PresetRow {
                     id: SharedString::from(id),
                     name: SharedString::from(name),
                     notes: SharedString::from(notes),
                     eq_enabled: eq,
-                    auto: is_auto,
                 });
             }
             ui.set_presets(ModelRc::new(VecModel::from(rows)));
         }
         Ok(_) => ui.set_presets(ModelRc::new(VecModel::from(vec![]))),
         Err(e) => ui.set_status_text(SharedString::from(e.to_string())),
+    }
+}
+
+fn refresh_device_manager(ui: &App) {
+    match ipc::get_device_manager() {
+        Ok(data) => {
+            let devices = data.get("devices").cloned().unwrap_or(Value::Array(vec![]));
+            let mut rows = Vec::new();
+            if let Value::Array(arr) = devices {
+                for item in arr {
+                    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let desc = item
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("name").and_then(|v| v.as_str()))
+                        .unwrap_or(&id)
+                        .to_string();
+                    let is_virtual = item
+                        .get("is_virtual")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let available = item
+                        .get("available")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    rows.push(OutputDeviceRow {
+                        id: SharedString::from(id),
+                        label: SharedString::from(desc),
+                        is_virtual,
+                        available,
+                    });
+                }
+            }
+            ui.set_output_devices(ModelRc::new(VecModel::from(rows)));
+
+            if let Some(state) = data.get("state") {
+                let link = state
+                    .get("link_all")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                ui.set_link_all_devices(link);
+                let backup = state
+                    .get("backup_mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("automatic");
+                ui.set_backup_mode_label(SharedString::from(backup));
+
+                let mut game = "—".to_string();
+                let mut chat = "—".to_string();
+                let mut media = "—".to_string();
+                let mut aux = "—".to_string();
+                if let Some(Value::Array(channels)) = state.get("channels") {
+                    for ch in channels {
+                        let name = ch.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                        let active = ch
+                            .get("active_device_id")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| {
+                                ch.get("priority")
+                                    .and_then(|p| p.as_array())
+                                    .and_then(|a| a.first())
+                                    .and_then(|v| v.as_str())
+                            })
+                            .unwrap_or("—");
+                        let short = if active.len() > 36 {
+                            format!("…{}", &active[active.len() - 32..])
+                        } else {
+                            active.to_string()
+                        };
+                        match name {
+                            "game" => game = short,
+                            "chat" => chat = short,
+                            "media" => media = short,
+                            "aux" => aux = short,
+                            _ => {}
+                        }
+                    }
+                }
+                ui.set_ch_device_game(SharedString::from(game));
+                ui.set_ch_device_chat(SharedString::from(chat));
+                ui.set_ch_device_media(SharedString::from(media));
+                ui.set_ch_device_aux(SharedString::from(aux));
+            }
+        }
+        Err(e) => {
+            ui.set_status_text(SharedString::from(format!("Device Manager: {e}")));
+        }
     }
 }
