@@ -78,8 +78,14 @@ component NavItem inherits Rectangle {
         padding-right: 12px;
         spacing: 10px;
         alignment: start;
+        vertical-stretch: 0;
 
-        @children
+        Rectangle {
+            width: 18px;
+            height: 18px;
+
+            @children
+        }
 
         Text {
             text: root.label;
@@ -103,8 +109,6 @@ export component App inherits Window {
     min-width: 900px;
     min-height: 600px;
     background: #0f1013;
-    // Client-side decorations (no system frame)
-    no-frame: true;
 
     // ---- state (set from Rust) ----
     in-out property <int> page: 0; // 0 Engine, 1 Sonar, 2 Prism, 3 Camera
@@ -830,18 +834,64 @@ export component App inherits Window {
                             HorizontalBox {
                                 spacing: 6px;
                                 alignment: center;
-                                Text {
-                                    text: ch.device-volume + "";
-                                    color: #ffffff;
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                    vertical-alignment: center;
-                                }
-                                Text {
-                                    text: "%";
-                                    color: #8b8d91;
-                                    font-size: 10px;
-                                    vertical-alignment: center;
+                                // Progress ring (device volume) + % in center
+                                Rectangle {
+                                    width: 34px;
+                                    height: 34px;
+                                    background: transparent;
+
+                                    // Track
+                                    Path {
+                                        width: 100%;
+                                        height: 100%;
+                                        viewbox-width: 100;
+                                        viewbox-height: 100;
+                                        stroke: #2a2b2f;
+                                        stroke-width: 3.5px;
+                                        fill: transparent;
+                                        MoveTo { x: 50; y: 50 - 40; }
+                                        ArcTo {
+                                            radius-x: 40;
+                                            radius-y: 40;
+                                            x: 49.99;
+                                            y: 50 - 40;
+                                            large-arc: true;
+                                            sweep: true;
+                                        }
+                                    }
+                                    // Progress arc
+                                    Path {
+                                        width: 100%;
+                                        height: 100%;
+                                        viewbox-width: 100;
+                                        viewbox-height: 100;
+                                        stroke: ch.muted ? #5a5b5f : ch.color;
+                                        stroke-width: 3.5px;
+                                        fill: transparent;
+                                        private property <float> p: Math.min(0.9999, ch.device-volume / 100);
+                                        private property <float> r: 40;
+                                        private property <float> cx: 50;
+                                        private property <float> cy: 50;
+                                        MoveTo { x: cx; y: cy - r; }
+                                        ArcTo {
+                                            radius-x: r;
+                                            radius-y: r;
+                                            x: cx + r * Math.sin(p * 360deg);
+                                            y: cy - r * Math.cos(p * 360deg);
+                                            sweep: p > 0;
+                                            large-arc: p > 0.5;
+                                        }
+                                    }
+                                    Text {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        text: ch.device-volume + "%";
+                                        color: #ffffff;
+                                        font-size: 8px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
                                 }
                                 Text {
                                     text: ch.device;
@@ -923,6 +973,21 @@ export component App inherits Window {
                                 horizontal-alignment: center;
                             }
 
+                            HorizontalBox {
+                                spacing: 6px;
+                                alignment: center;
+                                Button {
+                                    text: "M";
+                                    primary: ch.muted;
+                                    clicked => { root.channel-mute(ch.id); }
+                                }
+                                Button {
+                                    text: "S";
+                                    primary: ch.solo;
+                                    clicked => { root.channel-solo(ch.id); }
+                                }
+                            }
+
                             // Apps routed to this channel
                             Rectangle {
                                 height: 40px;
@@ -940,21 +1005,6 @@ export component App inherits Window {
                                         font-size: 9px;
                                         overflow: elide;
                                     }
-                                }
-                            }
-
-                            HorizontalBox {
-                                spacing: 6px;
-                                alignment: center;
-                                Button {
-                                    text: "M";
-                                    primary: ch.muted;
-                                    clicked => { root.channel-mute(ch.id); }
-                                }
-                                Button {
-                                    text: "S";
-                                    primary: ch.solo;
-                                    clicked => { root.channel-solo(ch.id); }
                                 }
                             }
                         }
