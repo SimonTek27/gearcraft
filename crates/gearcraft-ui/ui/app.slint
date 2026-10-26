@@ -886,9 +886,18 @@ export component App inherits Window {
                             toggled => { root.toggle-streamer(); }
                         }
                     }
-                    ConsoleButton {
-                        text: root.sonar-enabled ? "Spegni Sonar" : "Accendi Sonar";
-                        clicked => { root.toggle-sonar(); }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Sonar";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        ToggleSwitch {
+                            checked: root.sonar-enabled;
+                            toggled => { root.toggle-sonar(); }
+                        }
                     }
                     ConsoleButton {
                         text: "Setup sinks";
