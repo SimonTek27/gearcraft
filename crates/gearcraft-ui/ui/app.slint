@@ -159,6 +159,35 @@ component ConsoleButton inherits Rectangle {
     property <bool> has-hover: ta.has-hover;
 }
 
+// Android-style toggle switch
+component ToggleSwitch inherits Rectangle {
+    in property <bool> checked: false;
+    in property <string> label: "";
+    callback toggled();
+
+    width: 52px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.checked ? #00e7a0 : #2a2b2f;
+    border-width: 1px;
+    border-color: root.checked ? #00e7a0 : #3a3b3f;
+
+    // thumb
+    Rectangle {
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        y: 2px;
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        background: #ffffff;
+        // subtle shadow
+    }
+
+    TouchArea {
+        clicked => { root.toggled(); }
+    }
+}
+
 export component App inherits Window {
     title: "GearCraft";
     preferred-width: 1100px;
@@ -536,20 +565,6 @@ export component App inherits Window {
                 padding: 16px;
                 spacing: 8px;
 
-                Text {
-                    text: "GearCraft";
-                    color: #00e7a0;
-                    font-size: 18px;
-                    font-weight: 700;
-                }
-                Text {
-                    text: root.status-text;
-                    color: root.daemon-online ? #00e7a0 : #8b8d91;
-                    font-size: 11px;
-                }
-
-                Rectangle { height: 12px; background: transparent; }
-
                 NavItem {
                     label: "Engine";
                     active: root.page == 0;
@@ -798,10 +813,18 @@ export component App inherits Window {
                         font-size: 11px;
                         vertical-alignment: center;
                     }
-                    ConsoleButton {
-                        text: root.streamer-mode ? "Streamer: ON" : "Streamer: OFF";
-                        primary: root.streamer-mode;
-                        clicked => { root.toggle-streamer(); }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Streamer";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        ToggleSwitch {
+                            checked: root.streamer-mode;
+                            toggled => { root.toggle-streamer(); }
+                        }
                     }
                     ConsoleButton {
                         text: root.sonar-enabled ? "Spegni Sonar" : "Accendi Sonar";
@@ -816,6 +839,7 @@ export component App inherits Window {
                 // Multi-channel mixer (fixed size, does not stretch on resize)
                 HorizontalBox {
                     spacing: 8px;
+                    alignment: start;
 
                     for ch in root.channels: Rectangle {
                         border-radius: 12px;
@@ -1143,6 +1167,8 @@ export component App inherits Window {
                         }
                     }
                 }
+
+                Rectangle { height: 24px; background: transparent; }
             }
 
 
