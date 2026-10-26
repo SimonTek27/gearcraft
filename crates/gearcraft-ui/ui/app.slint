@@ -223,6 +223,7 @@ export component App inherits Window {
     in-out property <string> chatmix-backend: "—";
     in-out property <bool> chatmix-ready: false;
     in-out property <bool> streamer-mode: false;
+    in-out property <string> fx-channel: "";
     in-out property <bool> sonar-enabled: true;
     in-out property <[PresetRow]> presets: [];
     in-out property <string> active-preset-id: "";
@@ -895,6 +896,43 @@ export component App inherits Window {
                     }
                 }
 
+                // Channel selector row: Mixer | Game | Chat | Media | Aux | Mic
+                HorizontalBox {
+                    spacing: 8px;
+                    alignment: start;
+
+                    ConsoleButton {
+                        text: "🎚  Mixer";
+                        primary: root.page == 1;
+                        clicked => { root.go(1); }
+                    }
+                    ConsoleButton {
+                        text: "🎮  Game";
+                        primary: root.page == 5 && root.fx-channel == "game";
+                        clicked => { root.fx-channel = "game"; root.go(5); }
+                    }
+                    ConsoleButton {
+                        text: "💬  Chat";
+                        primary: root.page == 5 && root.fx-channel == "chat";
+                        clicked => { root.fx-channel = "chat"; root.go(5); }
+                    }
+                    ConsoleButton {
+                        text: "🎵  Media";
+                        primary: root.page == 5 && root.fx-channel == "media";
+                        clicked => { root.fx-channel = "media"; root.go(5); }
+                    }
+                    ConsoleButton {
+                        text: "🔌  Aux";
+                        primary: root.page == 5 && root.fx-channel == "aux";
+                        clicked => { root.fx-channel = "aux"; root.go(5); }
+                    }
+                    ConsoleButton {
+                        text: "🎤  Mic";
+                        primary: root.page == 5 && root.fx-channel == "mic";
+                        clicked => { root.fx-channel = "mic"; root.go(5); }
+                    }
+                }
+
                 // Multi-channel mixer (fixed size, does not stretch on resize)
                 HorizontalBox {
                     spacing: 8px;
@@ -917,13 +955,40 @@ export component App inherits Window {
                             padding-right: 8px;
                             spacing: 6px;
 
-                            // Header: channel name
-                            Text {
-                                text: ch.label;
-                                color: ch.color;
-                                font-size: 13px;
-                                font-weight: 700;
-                                horizontal-alignment: center;
+                            // Header: icon + channel name (tinted strip)
+                            Rectangle {
+                                height: 30px;
+                                border-radius: 8px;
+                                background: #121316;
+                                // subtle tint of the channel colour
+                                Rectangle {
+                                    x: 0; y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                    border-radius: parent.border-radius;
+                                    background: ch.color;
+                                    opacity: 0.10;
+                                }
+                                HorizontalBox {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 6px;
+                                    Text {
+                                        text: ch.id == "master" ? "🔊" : ch.id == "game" ? "🎮" : ch.id == "chat" ? "💬" : ch.id == "media" ? "🎵" : ch.id == "aux" ? "🔌" : ch.id == "mic" ? "🎤" : "🔊";
+                                        color: ch.color;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: ch.label;
+                                        color: ch.color;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
 
                             // Preset name (above device volume) + on/off
@@ -2153,7 +2218,7 @@ export component App inherits Window {
                         clicked => { root.go(1); }
                     }
                     Text {
-                        text: "Preset / FX — " + root.active-preset-name;
+                        text: root.fx-channel == "" ? ("Preset / FX — " + root.active-preset-name) : ("FX — " + root.fx-channel);
                         color: #ffffff;
                         font-size: 22px;
                         font-weight: 700;
