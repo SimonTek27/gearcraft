@@ -19,6 +19,10 @@ export struct ChannelRow {
     muted: bool,
     solo: bool,
     device: string,
+    device-volume: int,
+    preset-name: string,
+    preset-on: bool,
+    apps: string,
 }
 
 export struct PresetRow {
@@ -168,12 +172,12 @@ export component App inherits Window {
         { index: 9, freq-label: "16k", gain: 0 },
     ];
     in-out property <[ChannelRow]> channels: [
-        { id: "master", label: "MASTER", color: #8b8d91, volume: 100, muted: false, solo: false, device: "System" },
-        { id: "game", label: "GAME", color: #00e7a0, volume: 100, muted: false, solo: false, device: "GearCraft_Game" },
-        { id: "chat", label: "CHAT", color: #3b9eff, volume: 100, muted: false, solo: false, device: "GearCraft_Chat" },
-        { id: "media", label: "MEDIA", color: #e84d8a, volume: 100, muted: false, solo: false, device: "Default" },
-        { id: "aux", label: "AUX", color: #a78bfa, volume: 100, muted: false, solo: false, device: "Default" },
-        { id: "mic", label: "MIC", color: #f5a524, volume: 100, muted: false, solo: false, device: "Input" },
+        { id: "master", label: "MASTER", color: #8b8d91, volume: 100, muted: false, solo: false, device: "System", device-volume: 100, preset-name: "Default", preset-on: true, apps: "System sounds" },
+        { id: "game", label: "GAME", color: #00e7a0, volume: 100, muted: false, solo: false, device: "GearCraft_Game", device-volume: 100, preset-name: "Game", preset-on: true, apps: "" },
+        { id: "chat", label: "CHAT", color: #3b9eff, volume: 100, muted: false, solo: false, device: "GearCraft_Chat", device-volume: 100, preset-name: "Chat", preset-on: true, apps: "" },
+        { id: "media", label: "MEDIA", color: #e84d8a, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Media", preset-on: true, apps: "" },
+        { id: "aux", label: "AUX", color: #a78bfa, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Aux", preset-on: true, apps: "" },
+        { id: "mic", label: "MIC", color: #f5a524, volume: 100, muted: false, solo: false, device: "Input", device-volume: 100, preset-name: "Mic", preset-on: true, apps: "" },
     ];
 
     // Camera (under Sonar)
@@ -648,7 +652,7 @@ export component App inherits Window {
                         border-color: dev.id == root.selected-device-id ? #00e7a0 : #2a2b2f;
 
                         TouchArea {
-                            clicked => { root.select-device(dev.id); root.open-prism(dev.id); }
+                            clicked => { root.select-device(dev.id); root.page = 2; }
                             HorizontalBox {
                                 padding: 10px;
                                 spacing: 8px;
@@ -686,142 +690,21 @@ export component App inherits Window {
                     }
                 }
 
+                Text {
+                    text: "Seleziona un device per aprire le proprietà (RGB, DPI, cattura).";
+                    color: #8b8d91;
+                    font-size: 12px;
+                }
+
                 HorizontalBox {
-                    spacing: 24px;
-
-                    // Color preview
-                    Rectangle {
-                        width: 120px;
-                        height: 120px;
-                        border-radius: 12px;
-                        border-width: 1px;
-                        border-color: #2a2b2f;
-                        background: rgb(
-                            root.color-r * 255,
-                            root.color-g * 255,
-                            root.color-b * 255
-                        );
+                    spacing: 8px;
+                    Button {
+                        text: "📸  Cattura schermo";
+                        clicked => { root.page = 4; }
                     }
-
-                    VerticalBox {
-                        spacing: 8px;
-                        Text { text: "Red"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-r;
-                            changed(v) => { root.color-r = v; }
-                        }
-                        Text { text: "Green"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-g;
-                            changed(v) => { root.color-g = v; }
-                        }
-                        Text { text: "Blue"; color: #8b8d91; font-size: 11px; }
-                        Slider {
-                            minimum: 0;
-                            maximum: 1;
-                            value: root.color-b;
-                            changed(v) => { root.color-b = v; }
-                        }
-
-                        HorizontalBox {
-                            spacing: 8px;
-                            Button {
-                                text: "Logo";
-                                primary: root.color-zone == "logo";
-                                clicked => { root.color-zone = "logo"; }
-                            }
-                            Button {
-                                text: "All";
-                                primary: root.color-zone == "all";
-                                clicked => { root.color-zone = "all"; }
-                            }
-                            Button {
-                                text: "Apply colour";
-                                primary: true;
-                                clicked => { root.apply-color(); }
-                            }
-                        }
-                    }
-                }
-
-
-                Rectangle {
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #2a2b2f;
-                    background: #1a1b1e;
-                    VerticalBox {
-                        padding: 12px;
-                        spacing: 8px;
-                        HorizontalBox {
-                            Text {
-                                text: "DPI MOUSE · libratbag";
-                                color: #8b8d91;
-                                font-size: 11px;
-                                font-weight: 700;
-                            }
-                            Text {
-                                text: "  " + root.mouse-dpi-label;
-                                color: #00e7a0;
-                                font-size: 11px;
-                            }
-                            Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
-                                text: "Aggiorna";
-                                clicked => { root.refresh-mouse-info(); }
-                            }
-                        }
-                        HorizontalBox {
-                            spacing: 8px;
-                            Button { text: "400"; clicked => { root.set-device-dpi(400); } }
-                            Button { text: "800"; clicked => { root.set-device-dpi(800); } }
-                            Button { text: "1600"; clicked => { root.set-device-dpi(1600); } }
-                            Button { text: "3200"; clicked => { root.set-device-dpi(3200); } }
-                            Button { text: "6400"; clicked => { root.set-device-dpi(6400); } }
-                        }
-                    }
-                }
-
-                // Screen capture (Spectacle-style)
-                Rectangle {
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #2a2b2f;
-                    background: #1a1b1e;
-                    VerticalBox {
-                        padding: 12px;
-                        spacing: 8px;
-                        Text {
-                            text: "CATTURA SCHERMO · Spectacle";
-                            color: #8b8d91;
-                            font-size: 11px;
-                            font-weight: 700;
-                        }
-                        HorizontalBox {
-                            spacing: 8px;
-                            Button {
-                                text: "Schermo intero";
-                                primary: true;
-                                clicked => { root.take-screenshot("full"); }
-                            }
-                            Button {
-                                text: "Finestra attiva";
-                                clicked => { root.take-screenshot("window"); }
-                            }
-                            Button {
-                                text: "Regione";
-                                clicked => { root.take-screenshot("region"); }
-                            }
-                        }
-                        Text {
-                            text: "Salva in ~/Pictures/GearCraft · clipboard se disponibile";
-                            color: #5a5b5f;
-                            font-size: 10px;
-                        }
+                    Button {
+                        text: "Prism (RGB)";
+                        clicked => { if (root.selected-device-id != "") { root.page = 2; } }
                     }
                 }
 
@@ -878,7 +761,7 @@ export component App inherits Window {
                         border-color: #2a2b2f;
                         background: #1a1b1e;
                         opacity: root.sonar-enabled ? 1.0 : 0.45;
-                        min-width: 120px;
+                        min-width: 132px;
 
                         VerticalBox {
                             padding-top: 10px;
@@ -887,160 +770,97 @@ export component App inherits Window {
                             padding-right: 8px;
                             spacing: 6px;
 
-                            // Header: name + settings
+                            // Header: channel name
+                            Text {
+                                text: ch.label;
+                                color: ch.color;
+                                font-size: 13px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+
+                            // Preset name (above device volume) + on/off
                             HorizontalBox {
                                 spacing: 4px;
-                                Text {
-                                    text: ch.label;
-                                    color: ch.color;
-                                    font-size: 12px;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
+                                Rectangle {
                                     horizontal-stretch: 1;
-                                    vertical-alignment: center;
-                                }
-                                TouchArea {
-                                    width: 22px;
                                     height: 22px;
-                                    Rectangle {
-                                        border-radius: 6px;
-                                        background: parent.has-hover ? #2a2b2f : transparent;
+                                    border-radius: 6px;
+                                    background: #121316;
+                                    border-width: 1px;
+                                    border-color: #2a2b2f;
+                                    TouchArea {
+                                        clicked => { root.page = 5; }
                                         Text {
-                                            text: "⚙";
-                                            color: #8b8d91;
-                                            font-size: 14px;
+                                            text: ch.preset-name;
+                                            color: #00e7a0;
+                                            font-size: 10px;
+                                            font-weight: 600;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
+                                            width: 100%; height: 100%;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 30px;
+                                    height: 22px;
+                                    border-radius: 6px;
+                                    background: ch.preset-on ? #12332c : #121316;
+                                    border-width: 1px;
+                                    border-color: ch.preset-on ? #00e7a0 : #2a2b2f;
+                                    TouchArea {
+                                        clicked => { }
+                                        Text {
+                                            text: ch.preset-on ? "ON" : "OFF";
+                                            color: ch.preset-on ? #00e7a0 : #8b8d91;
+                                            font-size: 9px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: 100%; height: 100%;
                                         }
                                     }
                                 }
                             }
 
-                            // Device model + circular volume %
+                            // Device volume: "100" + device name + lock
                             HorizontalBox {
                                 spacing: 6px;
                                 alignment: center;
                                 Text {
-                                    text: ch.device;
+                                    text: ch.device-volume + "";
+                                    color: #ffffff;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "%";
                                     color: #8b8d91;
                                     font-size: 10px;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: ch.device;
+                                    color: #8b8d91;
+                                    font-size: 9px;
                                     overflow: elide;
                                     horizontal-stretch: 1;
                                     vertical-alignment: center;
                                 }
-                                // Progress ring (track + arc) + % in center
-                                Rectangle {
-                                    width: 34px;
-                                    height: 34px;
-                                    background: transparent;
-
-                                    // Track
-                                    Path {
-                                        width: 100%;
-                                        height: 100%;
-                                        viewbox-width: 100;
-                                        viewbox-height: 100;
-                                        stroke: #2a2b2f;
-                                        stroke-width: 3.5px;
-                                        fill: transparent;
-                                        MoveTo {
-                                            x: 50;
-                                            y: 50 - 40;
-                                        }
-                                        ArcTo {
-                                            radius-x: 40;
-                                            radius-y: 40;
-                                            x: 49.99;
-                                            y: 50 - 40;
-                                            large-arc: true;
-                                            sweep: true;
-                                        }
-                                    }
-                                    // Progress arc (0–100%)
-                                    Path {
-                                        width: 100%;
-                                        height: 100%;
-                                        viewbox-width: 100;
-                                        viewbox-height: 100;
-                                        stroke: ch.muted ? #5a5b5f : ch.color;
-                                        stroke-width: 3.5px;
-                                        fill: transparent;
-                                        private property <float> p: Math.min(0.9999, ch.volume / 100);
-                                        private property <float> r: 40;
-                                        private property <float> cx: 50;
-                                        private property <float> cy: 50;
-                                        MoveTo {
-                                            x: cx;
-                                            y: cy - r;
-                                        }
-                                        ArcTo {
-                                            radius-x: r;
-                                            radius-y: r;
-                                            x: cx + r * Math.sin(p * 360deg);
-                                            y: cy - r * Math.cos(p * 360deg);
-                                            sweep: p > 0;
-                                            large-arc: p > 0.5;
-                                        }
-                                    }
-                                    Text {
-                                        width: parent.width;
-                                        height: parent.height;
-                                        text: ch.volume + "%";
-                                        color: #ffffff;
-                                        font-size: 8px;
-                                        font-weight: 700;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                Text {
+                                    text: root.link-all-devices ? "🔒" : "🔓";
+                                    color: root.link-all-devices ? #00e7a0 : #5a5b5f;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
                                 }
                             }
 
-                            // Streamer dual meters
-                            if root.streamer-mode: HorizontalBox {
-                                spacing: 12px;
-                                alignment: center;
-                                height: 90px;
-                                VerticalBox {
-                                    spacing: 3px;
-                                    alignment: center;
-                                    Text { text: "🎧"; font-size: 11px; horizontal-alignment: center; }
-                                    Rectangle {
-                                        width: 14px;
-                                        vertical-stretch: 1;
-                                        border-radius: 3px;
-                                        background: #0f1013;
-                                        Rectangle {
-                                            width: parent.width;
-                                            height: parent.height * (ch.volume / 100.0);
-                                            y: parent.height - self.height;
-                                            border-radius: 3px;
-                                            background: ch.muted ? #3a3b3f : ch.color;
-                                        }
-                                    }
-                                }
-                                VerticalBox {
-                                    spacing: 3px;
-                                    alignment: center;
-                                    Text { text: "📡"; font-size: 11px; horizontal-alignment: center; }
-                                    Rectangle {
-                                        width: 14px;
-                                        vertical-stretch: 1;
-                                        border-radius: 3px;
-                                        background: #0f1013;
-                                        Rectangle {
-                                            width: parent.width;
-                                            height: parent.height * (ch.volume / 100.0);
-                                            y: parent.height - self.height;
-                                            border-radius: 3px;
-                                            background: ch.muted ? #3a3b3f : ch.color;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Vertical fader (real cursor)
+                            // Channel volume slider (fader)
                             Rectangle {
-                                height: 160px;
+                                height: 120px;
                                 horizontal-stretch: 1;
 
                                 Rectangle {
@@ -1081,14 +901,6 @@ export component App inherits Window {
                                         background: #f0f0f2;
                                         border-width: 1px;
                                         border-color: #ffffff;
-                                        VerticalBox {
-                                            padding: 3px;
-                                            spacing: 2px;
-                                            alignment: center;
-                                            Rectangle { height: 1px; width: 12px; background: #9a9b9f; }
-                                            Rectangle { height: 1px; width: 12px; background: #9a9b9f; }
-                                            Rectangle { height: 1px; width: 12px; background: #9a9b9f; }
-                                        }
                                     }
                                 }
                             }
@@ -1101,28 +913,23 @@ export component App inherits Window {
                                 horizontal-alignment: center;
                             }
 
+                            // Apps routed to this channel
                             Rectangle {
-                                height: 28px;
+                                height: 40px;
                                 border-radius: 6px;
                                 border-width: 1px;
                                 border-color: #2a2b2f;
                                 background: #121316;
-                                HorizontalBox {
-                                    padding-top: 4px;
-                                    padding-bottom: 4px;
-                                    padding-left: 8px;
-                                    padding-right: 8px;
-                                    spacing: 4px;
-                                    Text { text: "App"; color: #5a5b5f; font-size: 10px; vertical-alignment: center; }
+                                VerticalBox {
+                                    padding: 4px;
+                                    spacing: 2px;
+                                    Text { text: "App"; color: #5a5b5f; font-size: 9px; }
                                     Text {
-                                        text: ch.device;
+                                        text: ch.apps == "" ? ch.device : ch.apps;
                                         color: #8b8d91;
-                                        font-size: 10px;
+                                        font-size: 9px;
                                         overflow: elide;
-                                        horizontal-stretch: 1;
-                                        vertical-alignment: center;
                                     }
-                                    Text { text: ">"; color: #5a5b5f; font-size: 12px; vertical-alignment: center; }
                                 }
                             }
 
@@ -1336,241 +1143,6 @@ export component App inherits Window {
                     }
                 }
 
-                // Interactive 10-band EQ
-                Rectangle {
-                    height: 200px;
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #2a2b2f;
-                    background: #1a1b1e;
-                    VerticalBox {
-                        padding: 10px;
-                        spacing: 6px;
-                        HorizontalBox {
-                            Text { text: "EQUALIZER"; color: #8b8d91; font-size: 11px; font-weight: 700; }
-                            Text {
-                                text: "  −12 dB  ·  +12 dB";
-                                color: #5a5b5f; font-size: 10px;
-                            }
-                            Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
-                                text: root.eq-enabled ? "EQ: ON" : "EQ: OFF";
-                                primary: root.eq-enabled;
-                                clicked => { root.toggle-eq(); }
-                            }
-                            Button { text: "Reset EQ"; clicked => { root.reset-eq(); } }
-                            Button { text: "Applica EQ"; primary: true; clicked => { root.apply-eq(); } }
-                        }
-                        // Graph + faders
-                        HorizontalBox {
-                            spacing: 4px;
-                            vertical-stretch: 1;
-                            for band in root.eq-bands: VerticalBox {
-                                spacing: 2px;
-                                horizontal-stretch: 1;
-                                // Gain readout
-                                Text {
-                                    text: band.gain;
-                                    color: band.gain == 0 ? #5a5b5f : #00e7a0;
-                                    font-size: 9px;
-                                    font-family: "monospace";
-                                    horizontal-alignment: center;
-                                }
-                                // Vertical fader track
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    vertical-stretch: 1;
-                                    min-height: 110px;
-                                    border-radius: 6px;
-                                    background: #121316;
-                                    // zero line
-                                    Rectangle {
-                                        y: parent.height / 2 - 0.5px;
-                                        height: 1px;
-                                        width: 100%;
-                                        background: #2a2b2f;
-                                    }
-                                    // fill from center toward gain
-                                    Rectangle {
-                                        width: 8px;
-                                        x: (parent.width - 8px) / 2;
-                                        height: Math.abs(band.gain) / 12 * (parent.height / 2);
-                                        y: band.gain >= 0
-                                            ? parent.height / 2 - self.height
-                                            : parent.height / 2;
-                                        border-radius: 3px;
-                                        background: root.eq-enabled ? #00e7a0 : #3a3b3f;
-                                    }
-                                    // draggable thumb
-                                    Rectangle {
-                                        width: 14px;
-                                        height: 8px;
-                                        x: (parent.width - 14px) / 2;
-                                        y: parent.height / 2 - (band.gain / 12) * (parent.height / 2) - 4px;
-                                        border-radius: 3px;
-                                        background: #ffffff;
-                                    }
-                                    TouchArea {
-                                        moved => {
-                                            if (self.pressed) {
-                                                // top = +12, bottom = -12
-                                                root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
-                                            }
-                                        }
-                                        clicked => {
-                                            root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
-                                        }
-                                    }
-                                }
-                                Text {
-                                    text: band.freq-label;
-                                    color: #8b8d91;
-                                    font-size: 9px;
-                                    horizontal-alignment: center;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Spatial + volume (Sonar Game/Chat FX)
-                Rectangle {
-                    height: 110px;
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #2a2b2f;
-                    background: #1a1b1e;
-                    VerticalBox {
-                        padding: 10px;
-                        spacing: 6px;
-                        HorizontalBox {
-                            Text { text: "SPATIAL / BOOST"; color: #8b8d91; font-size: 11px; font-weight: 700; }
-                            Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
-                                text: root.spatial-enabled ? "Spatial: ON" : "Spatial: OFF";
-                                primary: root.spatial-enabled;
-                                clicked => { root.toggle-spatial(); }
-                            }
-                            Button {
-                                text: root.smart-volume ? "Smart Vol: ON" : "Smart Vol: OFF";
-                                primary: root.smart-volume;
-                                clicked => { root.toggle-smart-volume(); }
-                            }
-                            Button {
-                                text: "Reset FX";
-                                clicked => { root.reset-all-fx(); }
-                            }
-                            Button {
-                                text: "Applica FX";
-                                primary: true;
-                                clicked => { root.apply-spatial(); }
-                            }
-                        }
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text { text: "Perf"; color: #3b9eff; font-size: 10px; vertical-alignment: center; }
-                            Slider {
-                                horizontal-stretch: 1;
-                                minimum: 0;
-                                maximum: 100;
-                                value: root.spatial-immersion;
-                                changed(v) => { root.set-spatial-immersion(v); }
-                            }
-                            Text { text: "Immers"; color: #e84d8a; font-size: 10px; vertical-alignment: center; }
-                        }
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text { text: "Near"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
-                            Slider {
-                                horizontal-stretch: 1;
-                                minimum: 0;
-                                maximum: 100;
-                                value: root.spatial-distance;
-                                changed(v) => { root.set-spatial-distance(v); }
-                            }
-                            Text { text: "Far"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
-                        }
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text { text: "Boost dB"; color: #f5a524; font-size: 10px; vertical-alignment: center; }
-                            Slider {
-                                horizontal-stretch: 1;
-                                minimum: -6;
-                                maximum: 12;
-                                value: root.volume-boost;
-                                changed(v) => { root.set-volume-boost(v); }
-                            }
-                            Text {
-                                text: root.volume-boost;
-                                color: #ffffff;
-                                font-size: 11px;
-                                font-family: "monospace";
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-
-                // Microphone FX
-                Rectangle {
-                    height: 108px;
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #2a2b2f;
-                    background: #1a1b1e;
-                    VerticalBox {
-                        padding: 10px;
-                        spacing: 6px;
-                        HorizontalBox {
-                            Text { text: "MICROPHONE"; color: #f5a524; font-size: 11px; font-weight: 700; }
-                            Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
-                                text: root.mic-muted ? "Unmute" : "Mute";
-                                clicked => { root.toggle-mic-mute(); }
-                            }
-                            Button {
-                                text: root.mic-highpass ? "HPF: ON" : "HPF: OFF";
-                                primary: root.mic-highpass;
-                                clicked => { root.toggle-mic-highpass(); }
-                            }
-                            Button {
-                                text: root.mic-noise-gate ? "Gate: ON" : "Gate: OFF";
-                                primary: root.mic-noise-gate;
-                                clicked => { root.toggle-mic-gate(); }
-                            }
-                            Button {
-                                text: root.mic-lowpass ? "LPF: ON" : "LPF: OFF";
-                                primary: root.mic-lowpass;
-                                clicked => { root.toggle-mic-lowpass(); }
-                            }
-                            Button {
-                                text: root.mic-compressor ? "Comp: ON" : "Comp: OFF";
-                                primary: root.mic-compressor;
-                                clicked => { root.toggle-mic-compressor(); }
-                            }
-                            Button { text: "Aggiorna"; clicked => { root.refresh-mic-fx(); } }
-                            Button { text: "Applica Mic"; primary: true; clicked => { root.apply-mic-fx(); } }
-                        }
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text { text: "Gain"; color: #8b8d91; font-size: 11px; vertical-alignment: center; }
-                            Slider {
-                                horizontal-stretch: 1;
-                                minimum: 0;
-                                maximum: 150;
-                                value: root.mic-gain;
-                                changed(v) => { root.set-mic-gain(v); }
-                            }
-                            Text {
-                                text: root.mic-gain + "%";
-                                color: #ffffff;
-                                font-size: 11px;
-                                font-family: "monospace";
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
 
 // ChatMix bar (always)
                 Rectangle {
@@ -2463,6 +2035,275 @@ export component App inherits Window {
 
         }
     }
+
+            if root.page == 5: VerticalBox {
+                padding: 16px;
+                spacing: 10px;
+
+                HorizontalBox {
+                    Button {
+                        text: "← Sonar";
+                        clicked => { root.page = 1; }
+                    }
+                    Text {
+                        text: "Preset / FX — " + root.active-preset-name;
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    Button {
+                        text: "Applica preset";
+                        primary: true;
+                        clicked => { root.load-preset(root.active-preset-id); }
+                    }
+                }
+
+                Text {
+                    text: "Tutte le regolazioni del preset attivo";
+                    color: #8b8d91;
+                    font-size: 12px;
+                }
+
+                // Interactive 10-band EQ
+                Rectangle {
+                    height: 200px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "EQUALIZER"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                            Text {
+                                text: "  −12 dB  ·  +12 dB";
+                                color: #5a5b5f; font-size: 10px;
+                            }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.eq-enabled ? "EQ: ON" : "EQ: OFF";
+                                primary: root.eq-enabled;
+                                clicked => { root.toggle-eq(); }
+                            }
+                            Button { text: "Reset EQ"; clicked => { root.reset-eq(); } }
+                            Button { text: "Applica EQ"; primary: true; clicked => { root.apply-eq(); } }
+                        }
+                        // Graph + faders
+                        HorizontalBox {
+                            spacing: 4px;
+                            vertical-stretch: 1;
+                            for band in root.eq-bands: VerticalBox {
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                // Gain readout
+                                Text {
+                                    text: band.gain;
+                                    color: band.gain == 0 ? #5a5b5f : #00e7a0;
+                                    font-size: 9px;
+                                    font-family: "monospace";
+                                    horizontal-alignment: center;
+                                }
+                                // Vertical fader track
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    vertical-stretch: 1;
+                                    min-height: 110px;
+                                    border-radius: 6px;
+                                    background: #121316;
+                                    // zero line
+                                    Rectangle {
+                                        y: parent.height / 2 - 0.5px;
+                                        height: 1px;
+                                        width: 100%;
+                                        background: #2a2b2f;
+                                    }
+                                    // fill from center toward gain
+                                    Rectangle {
+                                        width: 8px;
+                                        x: (parent.width - 8px) / 2;
+                                        height: Math.abs(band.gain) / 12 * (parent.height / 2);
+                                        y: band.gain >= 0
+                                            ? parent.height / 2 - self.height
+                                            : parent.height / 2;
+                                        border-radius: 3px;
+                                        background: root.eq-enabled ? #00e7a0 : #3a3b3f;
+                                    }
+                                    // draggable thumb
+                                    Rectangle {
+                                        width: 14px;
+                                        height: 8px;
+                                        x: (parent.width - 14px) / 2;
+                                        y: parent.height / 2 - (band.gain / 12) * (parent.height / 2) - 4px;
+                                        border-radius: 3px;
+                                        background: #ffffff;
+                                    }
+                                    TouchArea {
+                                        moved => {
+                                            if (self.pressed) {
+                                                // top = +12, bottom = -12
+                                                root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
+                                            }
+                                        }
+                                        clicked => {
+                                            root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: band.freq-label;
+                                    color: #8b8d91;
+                                    font-size: 9px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Spatial + volume (Sonar Game/Chat FX)
+                Rectangle {
+                    height: 110px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "SPATIAL / BOOST"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.spatial-enabled ? "Spatial: ON" : "Spatial: OFF";
+                                primary: root.spatial-enabled;
+                                clicked => { root.toggle-spatial(); }
+                            }
+                            Button {
+                                text: root.smart-volume ? "Smart Vol: ON" : "Smart Vol: OFF";
+                                primary: root.smart-volume;
+                                clicked => { root.toggle-smart-volume(); }
+                            }
+                            Button {
+                                text: "Reset FX";
+                                clicked => { root.reset-all-fx(); }
+                            }
+                            Button {
+                                text: "Applica FX";
+                                primary: true;
+                                clicked => { root.apply-spatial(); }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Perf"; color: #3b9eff; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 100;
+                                value: root.spatial-immersion;
+                                changed(v) => { root.set-spatial-immersion(v); }
+                            }
+                            Text { text: "Immers"; color: #e84d8a; font-size: 10px; vertical-alignment: center; }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Near"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 100;
+                                value: root.spatial-distance;
+                                changed(v) => { root.set-spatial-distance(v); }
+                            }
+                            Text { text: "Far"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Boost dB"; color: #f5a524; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: -6;
+                                maximum: 12;
+                                value: root.volume-boost;
+                                changed(v) => { root.set-volume-boost(v); }
+                            }
+                            Text {
+                                text: root.volume-boost;
+                                color: #ffffff;
+                                font-size: 11px;
+                                font-family: "monospace";
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // Microphone FX
+                Rectangle {
+                    height: 108px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "MICROPHONE"; color: #f5a524; font-size: 11px; font-weight: 700; }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.mic-muted ? "Unmute" : "Mute";
+                                clicked => { root.toggle-mic-mute(); }
+                            }
+                            Button {
+                                text: root.mic-highpass ? "HPF: ON" : "HPF: OFF";
+                                primary: root.mic-highpass;
+                                clicked => { root.toggle-mic-highpass(); }
+                            }
+                            Button {
+                                text: root.mic-noise-gate ? "Gate: ON" : "Gate: OFF";
+                                primary: root.mic-noise-gate;
+                                clicked => { root.toggle-mic-gate(); }
+                            }
+                            Button {
+                                text: root.mic-lowpass ? "LPF: ON" : "LPF: OFF";
+                                primary: root.mic-lowpass;
+                                clicked => { root.toggle-mic-lowpass(); }
+                            }
+                            Button {
+                                text: root.mic-compressor ? "Comp: ON" : "Comp: OFF";
+                                primary: root.mic-compressor;
+                                clicked => { root.toggle-mic-compressor(); }
+                            }
+                            Button { text: "Aggiorna"; clicked => { root.refresh-mic-fx(); } }
+                            Button { text: "Applica Mic"; primary: true; clicked => { root.apply-mic-fx(); } }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Gain"; color: #8b8d91; font-size: 11px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 150;
+                                value: root.mic-gain;
+                                changed(v) => { root.set-mic-gain(v); }
+                            }
+                            Text {
+                                text: root.mic-gain + "%";
+                                color: #ffffff;
+                                font-size: 11px;
+                                font-family: "monospace";
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+
+            }
 
         } // end main VerticalBox (title + body)
 
