@@ -5,8 +5,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use gearcraft_core::{
-    default_socket_path, AudioEffects, AudioPreset, MicFxState, ChannelDevicePolicy, IpcCommand, IpcRequest,
-    IpcResponse, PresetRule, RgbColor,
+    default_socket_path, AudioPreset, ChannelDevicePolicy, IpcCommand, IpcRequest, IpcResponse,
+    PresetRule, RgbColor,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -29,20 +29,14 @@ impl std::fmt::Display for IpcError {
     }
 }
 
+impl std::error::Error for IpcError {}
+
 fn request(cmd: IpcCommand) -> Result<Value, IpcError> {
     let path = default_socket_path();
-    let mut stream = UnixStream::connect(&path).map_err(|e| {
-        IpcError::Connect(format!(
-            "cannot connect to {} ({e}) — start gearcraft-daemon",
-            path.display()
-        ))
-    })?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .ok();
-    stream
-        .set_write_timeout(Some(Duration::from_secs(3)))
-        .ok();
+    let mut stream = UnixStream::connect(&path)
+        .map_err(|e| IpcError::Connect(format!("{}: {e}", path.display())))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
 
     let req = IpcRequest {
         id: Uuid::new_v4(),
@@ -52,7 +46,9 @@ fn request(cmd: IpcCommand) -> Result<Value, IpcError> {
     let len = (body.len() as u32).to_le_bytes();
     stream
         .write_all(&len)
-        .and_then(|_| stream.write_all(&body))
+        .map_err(|e| IpcError::Io(e.to_string()))?;
+    stream
+        .write_all(&body)
         .map_err(|e| IpcError::Io(e.to_string()))?;
 
     let mut len_buf = [0u8; 4];
@@ -143,7 +139,6 @@ pub fn delete_preset_rule(device_id: &str, route_id: &str) -> Result<Value, IpcE
     })
 }
 
-
 pub fn get_device_manager() -> Result<Value, IpcError> {
     request(IpcCommand::GetDeviceManager)
 }
@@ -158,94 +153,4 @@ pub fn link_all_devices(device_id: Option<String>, enabled: bool) -> Result<Valu
 
 pub fn set_channel_device_policy(policy: ChannelDevicePolicy) -> Result<Value, IpcError> {
     request(IpcCommand::SetChannelDevicePolicy { policy })
-}
-
-
-pub fn apply_audio_effects(effects: AudioEffects) -> Result<Value, IpcError> {
-    request(IpcCommand::ApplyAudioEffects { effects })
-}
-
-
-pub fn get_mic_fx() -> Result<Value, IpcError> {
-    request(IpcCommand::GetMicFx)
-}
-
-pub fn set_mic_fx(state: MicFxState) -> Result<Value, IpcError> {
-    request(IpcCommand::SetMicFx { state })
-}
-
-
-pub fn set_rgb_effect(
-    device_id: &str,
-    zone: &str,
-    effect: &str,
-    color: Option<RgbColor>,
-) -> Result<(), IpcError> {
-    request(IpcCommand::SetRgbEffect {
-        device_id: device_id.to_string(),
-        zone: zone.to_string(),
-        effect: effect.to_string(),
-        color,
-    })?;
-    Ok(())
-}
-
-
-pub fn take_screenshot(
-    mode: &str,
-    delay_secs: u8,
-    copy_clipboard: bool,
-) -> Result<Value, IpcError> {
-    request(IpcCommand::TakeScreenshot {
-        mode: mode.to_string(),
-        delay_secs,
-        copy_clipboard,
-        save_dir: None,
-    })
-}
-
-
-#[allow(dead_code)]
-pub fn import_jamesdsp_path(path: &str, apply: bool) -> Result<Value, IpcError> {
-    request(IpcCommand::ImportJamesDspPreset {
-        name: None,
-        path: Some(path.to_string()),
-        content: None,
-        apply,
-    })
-}
-
-#[allow(dead_code)]
-pub fn import_jamesdsp_dir(path: &str) -> Result<Value, IpcError> {
-    request(IpcCommand::ImportJamesDspDir {
-        path: path.to_string(),
-        apply_first: false,
-    })
-}
-
-
-pub fn get_mouse_info(device_id: &str) -> Result<Value, IpcError> {
-    request(IpcCommand::GetMouseInfo {
-        device_id: device_id.to_string(),
-    })
-}
-
-pub fn set_dpi(device_id: &str, dpi: u32, profile: u32) -> Result<Value, IpcError> {
-    request(IpcCommand::SetDpi {
-        device_id: device_id.to_string(),
-        dpi,
-        profile,
-    })
-}
-
-pub fn prism_sync(
-    effect: &str,
-    zone: &str,
-    color: Option<RgbColor>,
-) -> Result<Value, IpcError> {
-    request(IpcCommand::PrismSync {
-        effect: effect.to_string(),
-        zone: zone.to_string(),
-        color,
-    })
 }

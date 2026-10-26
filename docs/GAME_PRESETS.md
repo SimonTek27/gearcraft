@@ -1,31 +1,19 @@
 # Game preset auto-switch (Quick Set)
 
 When a known game process is detected, GearCraft applies the matching audio
-preset (EQ + spatial + boost) automatically — similar to SteelSeries Sonar
-“Quick Set” / game configurations.
+preset automatically — similar to SteelSeries Sonar Quick Set.
 
 ## Detection
 
-Every 4 seconds the daemon inspects:
+Every 4s: `pactl list sink-inputs` + `/proc/*/comm`.
 
-1. `pactl list sink-inputs` → `application.process.binary` / `application.name`
-2. `/proc/*/comm` process names
+## Map
 
-## Built-in map
-
-| Process substring | Preset |
-|-------------------|--------|
+| Process | Preset |
+|---------|--------|
 | r5apex, apex… | Apex Legends |
 | cs2, csgo | Counter-Strike 2 |
-| valorant, overwatch, fortnite | CS2-style competitive |
-| eldenring, cyberpunk, witcher3, … | Immersion / Story |
+| valorant, overwatch, fortnite | CS2-style |
+| eldenring, cyberpunk, … | Immersion / Story |
 
-## Extend
-
-Edit `crates/gearcraft-daemon/src/game_presets.rs` (`GAME_MAP`) or save a custom
-preset id and add a mapping entry.
-
-## Notes
-
-- The last applied game preset is remembered for the daemon session (no re-apply spam).
-- Manual preset load from the UI still works and is not blocked.
+Edit `GAME_MAP` in `game_presets.rs` to extend.

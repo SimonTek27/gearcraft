@@ -22,7 +22,7 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
   - [x] Rival 3 family (RGB zones, polling, effects)
   - [x] Apex keyboards (uniform RGB)
   - [x] Arctis headsets (battery query stubs)
-- [x] Live USB scanning via `hidapi` (on by default, demo fallback)
+- [x] Optional `hidapi` feature for live USB
 - [x] udev rules (`assets/udev/99-gearcraft.rules`)
 - [x] Packaging: systemd unit, `install.sh`, Debian skeleton, AUR snippet
 
@@ -39,8 +39,6 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 - [x] **Audio presets** (JDSP4Linux-style CRUD + device rules + Sonar UI) — see `docs/AUDIO_PRESETS.md`
 - [x] PipeWire filter-chain DSP bridge (EQ, crossfeed) — `dsp_pw`
 - [x] Auto-apply preset rules on headset connect
-- [x] Game preset auto-switch (Quick Set style)
-
 - [x] **uinput** real macro playback + optional key grab
 - [x] Persist macros + ChatMix to disk (`~/.config/gearcraft/`)
 - [ ] WirePlumber static routes / session profiles for ChatMix
@@ -56,7 +54,7 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 ## Phase 5 — More brands (plugin model)
 
-- [x] Razer addon (OpenRazer-compat RGB: logo/scroll/matrix)
+- [x] Razer addon skeleton
 - [ ] Logitech (Lightspeed / G HUB subset)
 - [ ] Corsair / iCUE-compatible subset
 - [ ] Addon discovery API for third-party plugins

@@ -22,20 +22,4 @@ sink, with priority lists and automatic backup — same idea as SteelSeries
 | `LinkAllDevices { device_id?, enabled }` | Link / unlink |
 | `ApplyDeviceManager` | Re-apply loopbacks |
 
-### Policy JSON
-
-```json
-{
-  "channel": "game",
-  "priority": ["alsa_output.pci-0000_00_1f.3.analog-stereo", "bluez_output.XX"],
-  "excluded": [],
-  "active_device_id": null
-}
-```
-
 Persisted at `~/.config/gearcraft/device_manager.json`.
-
-## UI
-
-Sonar → **Setup sinks** still creates virtual sinks. Device assignment is via
-IPC / future Device Manager panel (link icon = `LinkAllDevices`).

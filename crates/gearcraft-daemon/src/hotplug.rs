@@ -20,7 +20,6 @@ pub async fn run(
     registry: Arc<RwLock<DeviceRegistry>>,
     presets: Arc<RwLock<AudioPresetStore>>,
 ) {
-    // Seed known IDs
     let mut known: std::collections::HashSet<String> = {
         let reg = registry.read().await;
         reg.list().iter().map(|d| d.id.clone()).collect()
@@ -62,12 +61,7 @@ async fn run_udevadm_session(
     known: &mut std::collections::HashSet<String>,
 ) -> Result<(), String> {
     let mut child = Command::new("udevadm")
-        .args([
-            "monitor",
-            "--udev",
-            "--subsystem-match=usb",
-            "--property",
-        ])
+        .args(["monitor", "--udev", "--subsystem-match=usb", "--property"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true)
@@ -86,7 +80,11 @@ async fn run_udevadm_session(
                 match line {
                     Ok(Some(l)) => {
                         let lower = l.to_ascii_lowercase();
-                        if lower.contains("add") || lower.contains("remove") || lower.contains("bind") || lower.contains("unbind") {
+                        if lower.contains("add")
+                            || lower.contains("remove")
+                            || lower.contains("bind")
+                            || lower.contains("unbind")
+                        {
                             pending = true;
                             debug!("hotplug event: {l}");
                         }
@@ -117,22 +115,20 @@ async fn refresh_and_apply(
         reg.refresh();
         let all: std::collections::HashSet<String> =
             reg.list().iter().map(|d| d.id.clone()).collect();
-        let appeared: Vec<(String, String, String)> = reg
+        let appeared: Vec<(String, String)> = reg
             .list()
             .iter()
             .filter(|d| !known.contains(&d.id))
-            .map(|d| (d.id.clone(), d.name.clone(), format!("{:?}", d.kind)))
+            .map(|d| (d.id.clone(), d.name.clone()))
             .collect();
         (appeared, all)
     };
 
-    // Drop gone devices from known
     known.retain(|id| all_ids.contains(id));
 
-    for (id, name, kind) in appeared {
+    for (id, name) in appeared {
         known.insert(id.clone());
-        info!("device connected: {name} ({id}) [{kind}]");
-        // Auto-apply audio preset rule if any
+        info!("device connected: {name} ({id})");
         let preset = {
             let store = presets.read().await;
             if let Some(p) = store.rule_for(&id, "").cloned() {
@@ -141,7 +137,9 @@ async fn refresh_and_apply(
                 let mut found = None;
                 for r in store.list_rules() {
                     let match_id = id.contains(&r.device_id)
-                        || name.to_ascii_lowercase().contains(&r.device_id.to_ascii_lowercase());
+                        || name
+                            .to_ascii_lowercase()
+                            .contains(&r.device_id.to_ascii_lowercase());
                     if match_id {
                         if let Some(p) = store.get(&r.preset_id).cloned() {
                             found = Some(p);

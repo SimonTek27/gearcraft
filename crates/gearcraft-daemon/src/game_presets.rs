@@ -1,8 +1,4 @@
 //! Quick-set style game → audio preset auto-switch.
-//!
-//! Watches running applications (PipeWire sink-inputs + `/proc`) and, when a
-//! known game binary appears, applies the matching audio preset (EQ/spatial).
-//! Sonar-equivalent of “Quick Set” / game configurations.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -14,17 +10,13 @@ use tracing::{debug, info, warn};
 
 use crate::audio_presets::{self, AudioPresetStore};
 
-/// (substring match on binary/name lowercase, preset_id)
 const GAME_MAP: &[(&str, &str)] = &[
-    // Apex
     ("r5apex", "apex-legends"),
     ("apex_legends", "apex-legends"),
     ("apexlegends", "apex-legends"),
-    // CS2 / CSGO
     ("cs2", "cs2"),
     ("csgo", "cs2"),
     ("counter-strike", "cs2"),
-    // Immersive / story-leaning defaults
     ("eldenring", "immersion"),
     ("elden ring", "immersion"),
     ("godofwar", "immersion"),
@@ -32,7 +24,6 @@ const GAME_MAP: &[(&str, &str)] = &[
     ("witcher3", "immersion"),
     ("hl2", "immersion"),
     ("re4", "immersion"),
-    // Competitive-ish → CS2-style presence
     ("valorant", "cs2"),
     ("overwatch", "cs2"),
     ("ow2", "cs2"),
@@ -42,7 +33,8 @@ const GAME_MAP: &[(&str, &str)] = &[
 
 pub async fn run_loop(store: Arc<RwLock<AudioPresetStore>>, interval_secs: u64) {
     let mut last_preset: Option<String> = None;
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(2)));
+    let mut interval =
+        tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(2)));
     info!("game preset auto-switch active (every {interval_secs}s)");
 
     loop {
@@ -103,7 +95,6 @@ pub async fn run_loop(store: Arc<RwLock<AudioPresetStore>>, interval_secs: u64) 
 async fn collect_app_names() -> HashSet<String> {
     let mut out = HashSet::new();
 
-    // 1) PipeWire/Pulse sink-input properties (apps actively playing audio)
     if let Ok(output) = Command::new("pactl")
         .args(["list", "sink-inputs"])
         .output()
@@ -113,19 +104,6 @@ async fn collect_app_names() -> HashSet<String> {
             let text = String::from_utf8_lossy(&output.stdout);
             for line in text.lines() {
                 let t = line.trim();
-                for prefix in [
-                    "application.process.binary = ",
-                    "application.name = ",
-                    "application.process.binary = \"",
-                ] {
-                    if let Some(rest) = t.strip_prefix(prefix) {
-                        let name = rest.trim().trim_matches('"').to_string();
-                        if !name.is_empty() {
-                            out.insert(name);
-                        }
-                    }
-                }
-                // pactl format: application.process.binary = "cs2"
                 if t.starts_with("application.") && t.contains('=') {
                     if let Some((_, val)) = t.split_once('=') {
                         let name = val.trim().trim_matches('"').to_string();
@@ -138,7 +116,6 @@ async fn collect_app_names() -> HashSet<String> {
         }
     }
 
-    // 2) /proc process names (catches games not yet routed to a sink)
     if let Ok(entries) = std::fs::read_dir("/proc") {
         for ent in entries.flatten() {
             let name = ent.file_name();

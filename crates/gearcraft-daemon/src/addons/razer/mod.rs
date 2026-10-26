@@ -1,7 +1,4 @@
 //! Razer peripheral addon — RGB via OpenRazer-compatible HID reports.
-//!
-//! Supports classic Chroma mice (logo / scroll / backlight) and a matrix
-//! static frame for keyboards. Requires `--features hidapi` for live I/O.
 
 mod protocol;
 
@@ -11,13 +8,10 @@ use tracing::{debug, info, warn};
 use crate::usb;
 use protocol::{leds_for_zone, matrix_static, set_led_effect, set_led_rgb, set_led_state, Effect, LedId};
 
-/// USB vendor ID for Razer.
 pub const RAZER_VID: u16 = 0x1532;
 
-/// Known product IDs (subset — expand with captures).
 #[allow(dead_code)]
 pub const KNOWN_RAZER: &[(u16, &str, DeviceKind)] = &[
-    // Mice
     (0x0043, "Abyssus", DeviceKind::Mouse),
     (0x005C, "DeathAdder Essential", DeviceKind::Mouse),
     (0x0060, "DeathAdder Elite", DeviceKind::Mouse),
@@ -34,19 +28,16 @@ pub const KNOWN_RAZER: &[(u16, &str, DeviceKind)] = &[
     (0x00A7, "Basilisk V3", DeviceKind::Mouse),
     (0x00B7, "DeathAdder V3", DeviceKind::Mouse),
     (0x00B6, "DeathAdder V3 Pro", DeviceKind::Mouse),
-    // Keyboards
     (0x0221, "BlackWidow Chroma", DeviceKind::Keyboard),
     (0x022A, "BlackWidow Chroma V2", DeviceKind::Keyboard),
     (0x0241, "BlackWidow Elite", DeviceKind::Keyboard),
     (0x0255, "BlackWidow V3", DeviceKind::Keyboard),
     (0x025A, "BlackWidow V3 TKL", DeviceKind::Keyboard),
     (0x028A, "BlackWidow V3 Mini", DeviceKind::Keyboard),
-    // Mats / other
     (0x0C00, "Firefly", DeviceKind::Other),
     (0x0C04, "Goliathus", DeviceKind::Other),
 ];
 
-/// Try to build a Razer addon for a scanned device.
 pub fn try_create(dev: &DeviceInfo) -> Option<Box<dyn PeripheralAddon>> {
     let name_l = dev.name.to_ascii_lowercase();
     let id_l = dev.id.to_ascii_lowercase();
@@ -78,13 +69,10 @@ impl RazerDevice {
             .path
             .as_deref()
             .ok_or("Razer device has no HID path (demo or missing permissions)")?;
-        // Razer uses feature reports for the 90-byte control frame.
         usb::write_feature_report(path, report)?;
         debug!(
-            "Razer feature report → {} ({:02x} {:02x} class={:02x} cmd={:02x})",
+            "Razer feature report → {} (class={:02x} cmd={:02x})",
             self.info.name,
-            report.first().copied().unwrap_or(0),
-            report.get(1).copied().unwrap_or(0),
             report.get(6).copied().unwrap_or(0),
             report.get(7).copied().unwrap_or(0),
         );
@@ -98,12 +86,10 @@ impl RazerDevice {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match self.info.kind {
             DeviceKind::Keyboard | DeviceKind::Other => {
-                // Matrix static for boards / mats
                 self.send_report(&matrix_static(color))?;
             }
             DeviceKind::Mouse | _ => {
                 for led in leds_for_zone(zone) {
-                    // Turn LED on, set static effect, then RGB
                     let _ = self.send_report(&set_led_state(led, true));
                     let _ = self.send_report(&set_led_effect(led, Effect::Static));
                     self.send_report(&set_led_rgb(led, color))?;
@@ -127,7 +113,6 @@ impl PeripheralAddon for RazerDevice {
             self.info.product_id,
             self.info.path.as_deref().unwrap_or("-")
         );
-        // Best-effort: enable logo + scroll LEDs
         if self.info.path.is_some() {
             for led in [LedId::Logo, LedId::ScrollWheel] {
                 if let Err(e) = self.send_report(&set_led_state(led, true)) {
@@ -136,7 +121,7 @@ impl PeripheralAddon for RazerDevice {
             }
         } else {
             warn!(
-                "Razer {}: no HID path – RGB writes will fail until hidapi scan finds the device",
+                "Razer {}: no HID path – RGB writes need hidapi + udev",
                 self.info.name
             );
         }
@@ -195,37 +180,5 @@ impl PeripheralAddon for RazerDevice {
             "rgb": "openrazer-compat",
             "zones": ["logo", "scroll", "backlight", "all"],
         }))
-    }
-
-    fn set_effect(
-        &mut self,
-        zone: &str,
-        effect: &str,
-        color: Option<RgbColor>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if !self.initialized {
-            self.initialize()?;
-        }
-        use protocol::{set_led_effect, set_led_rgb, Effect, LedId};
-        let led = match zone {
-            "scroll" | "scroll_wheel" => LedId::ScrollWheel,
-            "logo" => LedId::Logo,
-            "backlight" | "keyboard" => LedId::Backlight,
-            _ => LedId::Logo,
-        };
-        let eff = match effect {
-            "static" => Effect::Static,
-            "breathe" | "breathing" => Effect::Breathing,
-            "spectrum" | "rainbow" | "wave" | "reactive" => Effect::Spectrum,
-            "off" => Effect::Off,
-            _ => Effect::Static,
-        };
-        self.send_report(&set_led_effect(led, eff))?;
-        if matches!(eff, Effect::Static) {
-            if let Some(c) = color {
-                self.send_report(&set_led_rgb(led, &c))?;
-            }
-        }
-        Ok(())
     }
 }

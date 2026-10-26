@@ -314,9 +314,6 @@ pub async fn apply_preset_runtime(preset: &AudioPreset) -> Result<serde_json::Va
     });
 
     if let Some(ref cm) = preset.chatmix {
-        if let Err(e) = crate::config::save_chatmix(cm) {
-            warn!("ChatMix persist on preset load: {e}");
-        }
         match crate::chatmix_pw::apply_volumes(cm.game_volume, cm.chat_volume).await {
             Ok(_) => {
                 applied["chatmix_applied"] = serde_json::json!(true);

@@ -1,9 +1,4 @@
 //! Sonar Device Manager — physical output per channel, priority & backup.
-//!
-//! Model (PipeWire/Pulse):
-//! - Apps → virtual sinks `gearcraft_{game,chat,media,aux}`
-//! - Loopback: `virtual.monitor` → selected physical sink
-//! - Priority list + exclusion; automatic failover when primary disappears
 
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -12,13 +7,12 @@ use gearcraft_core::{
     AudioOutputDevice, BackupMode, ChannelDevicePolicy, DeviceManagerState, SonarChannelId,
 };
 use tokio::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::config;
 
 pub struct DeviceManager {
     pub state: DeviceManagerState,
-    /// channel → pactl module id of loopback
     loopbacks: HashMap<String, u32>,
 }
 
@@ -39,11 +33,6 @@ impl DeviceManager {
 
     pub fn save(&self) -> Result<(), String> {
         config::save_device_manager(&self.state)
-    }
-
-    #[allow(dead_code)]
-    pub fn state_clone(&self) -> DeviceManagerState {
-        self.state.clone()
     }
 
     pub fn set_state(&mut self, state: DeviceManagerState) {
@@ -77,7 +66,6 @@ impl DeviceManager {
     }
 }
 
-/// Enumerate sinks via pactl (works with pipewire-pulse).
 pub async fn list_outputs() -> Result<Vec<AudioOutputDevice>, String> {
     let out = Command::new("pactl")
         .args(["list", "sinks"])
@@ -102,8 +90,7 @@ pub async fn list_outputs() -> Result<Vec<AudioOutputDevice>, String> {
         }
         let is_virtual = name.starts_with("gearcraft_")
             || description.to_ascii_lowercase().contains("gearcraft");
-        let available = !state_line.to_ascii_lowercase().contains("suspend")
-            && !state_line.to_ascii_lowercase().contains("invalid");
+        let available = !state_line.to_ascii_lowercase().contains("invalid");
         devices.push(AudioOutputDevice {
             id: name.clone(),
             name: name.clone(),
@@ -154,7 +141,6 @@ fn pick_device(
             return Some(id.clone());
         }
     }
-    // Fallback: first non-excluded physical device
     for d in devices {
         if d.is_virtual || !d.available {
             continue;
@@ -177,7 +163,6 @@ async fn unload_module(id: u32) {
 }
 
 async fn load_loopback(virtual_sink: &str, physical_sink: &str) -> Result<u32, String> {
-    // module-loopback source=<virt>.monitor sink=<physical>
     let source = format!("{virtual_sink}.monitor");
     let out = Command::new("pactl")
         .args([
@@ -201,15 +186,11 @@ async fn load_loopback(virtual_sink: &str, physical_sink: &str) -> Result<u32, S
         .map_err(|_| format!("bad module id: {id_str}"))
 }
 
-/// Apply policies: ensure virtual sinks exist, set loopbacks, update active ids.
 pub async fn apply(mgr: &mut DeviceManager) -> Result<serde_json::Value, String> {
-    // Ensure virtual sinks
     let _ = crate::chatmix_pw::setup_virtual_sinks().await;
-
     let devices = list_outputs().await.unwrap_or_default();
     let mut applied = Vec::new();
 
-    // If link_all, force same primary on every channel from game's first priority
     if mgr.state.link_all {
         let primary = mgr
             .state
@@ -241,8 +222,6 @@ pub async fn apply(mgr: &mut DeviceManager) -> Result<serde_json::Value, String>
             .unwrap_or_else(|| ChannelDevicePolicy::new(ch));
 
         let chosen = pick_device(&policy, &devices);
-
-        // Drop old loopback
         let key = ch.as_str().to_string();
         if let Some(mid) = mgr.loopbacks.remove(&key) {
             unload_module(mid).await;
@@ -252,11 +231,7 @@ pub async fn apply(mgr: &mut DeviceManager) -> Result<serde_json::Value, String>
             match load_loopback(ch.virtual_sink(), phys).await {
                 Ok(mid) => {
                     mgr.loopbacks.insert(key, mid);
-                    info!(
-                        "device manager: {} → {} (module {mid})",
-                        ch.as_str(),
-                        phys
-                    );
+                    info!("device manager: {} → {} (module {mid})", ch.as_str(), phys);
                     applied.push(serde_json::json!({
                         "channel": ch.as_str(),
                         "device": phys,
@@ -273,19 +248,13 @@ pub async fn apply(mgr: &mut DeviceManager) -> Result<serde_json::Value, String>
                 }
             }
         } else {
-            debug!("device manager: no physical device for {}", ch.as_str());
             applied.push(serde_json::json!({
                 "channel": ch.as_str(),
                 "device": null,
             }));
         }
 
-        if let Some(slot) = mgr
-            .state
-            .channels
-            .iter_mut()
-            .find(|c| c.channel == ch)
-        {
+        if let Some(slot) = mgr.state.channels.iter_mut().find(|c| c.channel == ch) {
             slot.active_device_id = chosen.clone();
         }
     }
@@ -298,7 +267,6 @@ pub async fn apply(mgr: &mut DeviceManager) -> Result<serde_json::Value, String>
     }))
 }
 
-/// Failover pass: if active device gone and backup is automatic, re-apply.
 pub async fn failover_tick(mgr: &mut DeviceManager) {
     if mgr.state.backup_mode != BackupMode::Automatic {
         return;

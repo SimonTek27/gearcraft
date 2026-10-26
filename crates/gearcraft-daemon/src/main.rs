@@ -4,11 +4,6 @@ mod addons;
 mod app_routing;
 mod hotplug;
 mod device_manager;
-mod game_presets;
-mod mic_fx;
-mod drivers;
-mod screenshot;
-mod jamesdsp_import;
 mod audio_presets;
 mod chatmix_pw;
 mod dsp_pw;
@@ -53,12 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let backend = chatmix_pw::detect_sinks().await;
     info!("ChatMix audio: {} – {}", backend.backend, backend.message);
     info!("DSP status: {}", dsp_pw::dsp_status().await);
-    info!(
-        "ChatMix balance from config: {} (game {}% / chat {}%)",
-        settings.chatmix.balance, settings.chatmix.game_volume, settings.chatmix.chat_volume
-    );
 
-    // Re-apply last ChatMix volumes if sinks are ready
     if backend.available {
         let g = settings.chatmix.game_volume;
         let c = settings.chatmix.chat_volume;
@@ -72,8 +62,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     registry.refresh();
 
     let macros = MacroStore::load_or_defaults();
-    info!("macros in store: {}", macros.list().len());
-
     let audio_presets = AudioPresetStore::load();
     let device_manager = device_manager::DeviceManager::load();
 
@@ -85,24 +73,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         device_manager: Arc::new(RwLock::new(device_manager)),
     };
 
-    // Auto-route apps → Sonar channels (Discord→chat, Haruna→media, …)
     tokio::spawn(async move {
         app_routing::run_loop(2).await;
     });
 
-    let presets_game = Arc::clone(&state.audio_presets);
-    tokio::spawn(async move {
-        game_presets::run_loop(presets_game, 4).await;
-    });
-
-    // USB hotplug + auto-apply audio presets on connect
     let reg_hp = Arc::clone(&state.registry);
     let presets_hp = Arc::clone(&state.audio_presets);
     tokio::spawn(async move {
         hotplug::run(reg_hp, presets_hp).await;
     });
 
-    // Device Manager failover (primary sink lost → next priority)
     let dm_tick = Arc::clone(&state.device_manager);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
@@ -113,7 +93,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // Initial apply if auto_switch_on_startup
     {
         let mut dm = state.device_manager.write().await;
         if dm.state.auto_switch_on_startup {
