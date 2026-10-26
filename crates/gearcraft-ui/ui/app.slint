@@ -1,6 +1,6 @@
 // GearCraft — Slint UI (dark, accent #00E7A0)
 
-import { Button, VerticalBox, HorizontalBox, Slider, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Slider, ScrollView } from "std-widgets.slint";
 
 export struct DeviceRow {
     id: string,
@@ -101,6 +101,62 @@ component NavItem inherits Rectangle {
     ta := TouchArea {
         clicked => { root.clicked(); }
     }
+}
+
+// Backlit console key button
+component ConsoleButton inherits Rectangle {
+    in property <string> text: "";
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 30px;
+    min-width: 44px;
+    border-radius: 8px;
+    background: root.primary
+        ? (root.pressed ? #0a2a22 : #0d1f1a)
+        : (root.pressed ? #141518 : #1a1b1e);
+    border-width: 1px;
+    border-color: root.primary
+        ? (root.has-hover ? #00e7a0 : #00e7a080)
+        : (root.has-hover ? #3a3b3f : #2a2b2f);
+    opacity: root.enabled ? 1.0 : 0.45;
+
+    // backlight glow
+    Rectangle {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: transparent;
+        border-width: 0px;
+        // glow layer
+        Rectangle {
+            x: 2px; y: 2px;
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            border-radius: parent.border-radius - 2px;
+            background: root.primary ? #00e7a018 : (root.has-hover ? #ffffff08 : transparent);
+        }
+    }
+
+    Text {
+        text: root.text;
+        color: root.primary ? #00e7a0 : (root.has-hover ? #ffffff : #c8c9cc);
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%; height: 100%;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    property <bool> pressed: ta.pressed;
+    property <bool> has-hover: ta.has-hover;
 }
 
 export component App inherits Window {
@@ -705,11 +761,11 @@ export component App inherits Window {
 
                 HorizontalBox {
                     spacing: 8px;
-                    Button {
+                    ConsoleButton {
                         text: "📸  Cattura schermo";
                         clicked => { root.page = 4; }
                     }
-                    Button {
+                    ConsoleButton {
                         text: "Prism (RGB)";
                         clicked => { if (root.selected-device-id != "") { root.page = 2; } }
                     }
@@ -742,25 +798,24 @@ export component App inherits Window {
                         font-size: 11px;
                         vertical-alignment: center;
                     }
-                    Button {
+                    ConsoleButton {
                         text: root.streamer-mode ? "Streamer: ON" : "Streamer: OFF";
                         primary: root.streamer-mode;
                         clicked => { root.toggle-streamer(); }
                     }
-                    Button {
+                    ConsoleButton {
                         text: root.sonar-enabled ? "Spegni Sonar" : "Accendi Sonar";
                         clicked => { root.toggle-sonar(); }
                     }
-                    Button {
+                    ConsoleButton {
                         text: "Setup sinks";
                         clicked => { root.setup-chatmix(); }
                     }
                 }
 
-                // Multi-channel mixer
+                // Multi-channel mixer (fixed size, does not stretch on resize)
                 HorizontalBox {
                     spacing: 8px;
-                    vertical-stretch: 1;
 
                     for ch in root.channels: Rectangle {
                         border-radius: 12px;
@@ -768,7 +823,7 @@ export component App inherits Window {
                         border-color: #2a2b2f;
                         background: #1a1b1e;
                         opacity: root.sonar-enabled ? 1.0 : 0.45;
-                        min-width: 132px;
+                        width: 132px;
 
                         VerticalBox {
                             padding-top: 10px;
@@ -993,12 +1048,12 @@ export component App inherits Window {
                             HorizontalBox {
                                 spacing: 6px;
                                 alignment: center;
-                                Button {
+                                ConsoleButton {
                                     text: "M";
                                     primary: ch.muted;
                                     clicked => { root.channel-mute(ch.id); }
                                 }
-                                Button {
+                                ConsoleButton {
                                     text: "S";
                                     primary: ch.solo;
                                     clicked => { root.channel-solo(ch.id); }
@@ -1097,7 +1152,7 @@ export component App inherits Window {
                 spacing: 16px;
 
                 HorizontalBox {
-                    Button {
+                    ConsoleButton {
                         text: "← Engine";
                         clicked => { root.page = 0; }
                     }
@@ -1115,11 +1170,11 @@ export component App inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
-                    Button {
+                    ConsoleButton {
                         text: "Sync tutti";
                         clicked => { root.prism-sync-all(); }
                     }
-                    Button {
+                    ConsoleButton {
                         text: "Applica";
                         primary: true;
                         clicked => { root.apply-prism(); }
@@ -1155,32 +1210,32 @@ export component App inherits Window {
                         Text { text: "EFFETTO"; color: #8b8d91; font-size: 11px; font-weight: 700; }
                         HorizontalBox {
                             spacing: 8px;
-                            Button {
+                            ConsoleButton {
                                 text: "Static";
                                 primary: root.prism-effect == "static";
                                 clicked => { root.set-prism-effect("static"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Rainbow";
                                 primary: root.prism-effect == "rainbow";
                                 clicked => { root.set-prism-effect("rainbow"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Breathe";
                                 primary: root.prism-effect == "breathe";
                                 clicked => { root.set-prism-effect("breathe"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Spectrum";
                                 primary: root.prism-effect == "spectrum";
                                 clicked => { root.set-prism-effect("spectrum"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Wave";
                                 primary: root.prism-effect == "wave";
                                 clicked => { root.set-prism-effect("wave"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Off";
                                 primary: root.prism-effect == "off";
                                 clicked => { root.set-prism-effect("off"); }
@@ -1190,22 +1245,22 @@ export component App inherits Window {
                         Text { text: "ZONA"; color: #8b8d91; font-size: 11px; font-weight: 700; }
                         HorizontalBox {
                             spacing: 8px;
-                            Button {
+                            ConsoleButton {
                                 text: "Logo";
                                 primary: root.color-zone == "logo";
                                 clicked => { root.color-zone = "logo"; }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Scroll";
                                 primary: root.color-zone == "scroll";
                                 clicked => { root.color-zone = "scroll"; }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "All";
                                 primary: root.color-zone == "all";
                                 clicked => { root.color-zone = "all"; }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Backlight";
                                 primary: root.color-zone == "backlight";
                                 clicked => { root.color-zone = "backlight"; }
@@ -1246,7 +1301,7 @@ export component App inherits Window {
 
                         HorizontalBox {
                             spacing: 8px;
-                            Button {
+                            ConsoleButton {
                                 text: "Verde GearCraft";
                                 clicked => {
                                     root.color-r = 0;
@@ -1255,7 +1310,7 @@ export component App inherits Window {
                                     root.prism-effect = "static";
                                 }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Bianco";
                                 clicked => {
                                     root.color-r = 1;
@@ -1264,7 +1319,7 @@ export component App inherits Window {
                                     root.prism-effect = "static";
                                 }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Rosso";
                                 clicked => {
                                     root.color-r = 1;
@@ -1298,18 +1353,18 @@ export component App inherits Window {
                                 font-size: 11px;
                             }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
+                            ConsoleButton {
                                 text: "Aggiorna";
                                 clicked => { root.refresh-mouse-info(); }
                             }
                         }
                         HorizontalBox {
                             spacing: 8px;
-                            Button { text: "400"; clicked => { root.set-device-dpi(400); } }
-                            Button { text: "800"; clicked => { root.set-device-dpi(800); } }
-                            Button { text: "1600"; clicked => { root.set-device-dpi(1600); } }
-                            Button { text: "3200"; clicked => { root.set-device-dpi(3200); } }
-                            Button { text: "6400"; clicked => { root.set-device-dpi(6400); } }
+                            ConsoleButton { text: "400"; clicked => { root.set-device-dpi(400); } }
+                            ConsoleButton { text: "800"; clicked => { root.set-device-dpi(800); } }
+                            ConsoleButton { text: "1600"; clicked => { root.set-device-dpi(1600); } }
+                            ConsoleButton { text: "3200"; clicked => { root.set-device-dpi(3200); } }
+                            ConsoleButton { text: "6400"; clicked => { root.set-device-dpi(6400); } }
                         }
                     }
                 }
@@ -1337,11 +1392,11 @@ export component App inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
-                    Button {
+                    ConsoleButton {
                         text: "Aggiorna device";
                         clicked => { root.refresh-cameras(); }
                     }
-                    Button {
+                    ConsoleButton {
                         text: "Applica settaggi";
                         primary: true;
                         clicked => { root.apply-camera-settings(); }
@@ -1411,16 +1466,16 @@ export component App inherits Window {
 
                         HorizontalBox {
                             spacing: 8px;
-                            Button {
+                            ConsoleButton {
                                 text: root.camera-preview-active ? "Stop preview" : "Avvia preview";
                                 primary: !root.camera-preview-active;
                                 clicked => { root.toggle-camera-preview(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.cam-video-recording ? "■ Stop REC" : "● Rec video";
                                 clicked => { root.toggle-cam-recording(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Scatta foto";
                                 primary: true;
                                 clicked => { root.capture-photo(); }
@@ -1474,22 +1529,22 @@ export component App inherits Window {
 
                         HorizontalBox {
                             spacing: 6px;
-                            Button {
+                            ConsoleButton {
                                 text: "Video";
                                 primary: root.camera-mode == "video";
                                 clicked => { root.set-camera-mode("video"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Foto";
                                 primary: root.camera-mode == "photo";
                                 clicked => { root.set-camera-mode("photo"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Immagine";
                                 primary: root.camera-mode == "image";
                                 clicked => { root.set-camera-mode("image"); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Effetti";
                                 primary: root.camera-mode == "effects";
                                 clicked => { root.set-camera-mode("effects"); }
@@ -1504,28 +1559,28 @@ export component App inherits Window {
                             Text { text: "Risoluzione"; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "640x480"; primary: root.cam-video-resolution == "640x480"; clicked => { root.set-cam-video-resolution("640x480"); } }
-                                Button { text: "1280x720"; primary: root.cam-video-resolution == "1280x720"; clicked => { root.set-cam-video-resolution("1280x720"); } }
-                                Button { text: "1920x1080"; primary: root.cam-video-resolution == "1920x1080"; clicked => { root.set-cam-video-resolution("1920x1080"); } }
-                                Button { text: "3840x2160"; primary: root.cam-video-resolution == "3840x2160"; clicked => { root.set-cam-video-resolution("3840x2160"); } }
+                                ConsoleButton { text: "640x480"; primary: root.cam-video-resolution == "640x480"; clicked => { root.set-cam-video-resolution("640x480"); } }
+                                ConsoleButton { text: "1280x720"; primary: root.cam-video-resolution == "1280x720"; clicked => { root.set-cam-video-resolution("1280x720"); } }
+                                ConsoleButton { text: "1920x1080"; primary: root.cam-video-resolution == "1920x1080"; clicked => { root.set-cam-video-resolution("1920x1080"); } }
+                                ConsoleButton { text: "3840x2160"; primary: root.cam-video-resolution == "3840x2160"; clicked => { root.set-cam-video-resolution("3840x2160"); } }
                             }
 
                             Text { text: "FPS: " + root.cam-video-fps; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "24"; primary: root.cam-video-fps == 24; clicked => { root.set-cam-video-fps(24); } }
-                                Button { text: "30"; primary: root.cam-video-fps == 30; clicked => { root.set-cam-video-fps(30); } }
-                                Button { text: "60"; primary: root.cam-video-fps == 60; clicked => { root.set-cam-video-fps(60); } }
-                                Button { text: "120"; primary: root.cam-video-fps == 120; clicked => { root.set-cam-video-fps(120); } }
+                                ConsoleButton { text: "24"; primary: root.cam-video-fps == 24; clicked => { root.set-cam-video-fps(24); } }
+                                ConsoleButton { text: "30"; primary: root.cam-video-fps == 30; clicked => { root.set-cam-video-fps(30); } }
+                                ConsoleButton { text: "60"; primary: root.cam-video-fps == 60; clicked => { root.set-cam-video-fps(60); } }
+                                ConsoleButton { text: "120"; primary: root.cam-video-fps == 120; clicked => { root.set-cam-video-fps(120); } }
                             }
 
                             Text { text: "Formato"; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "MJPG"; primary: root.cam-video-format == "MJPG"; clicked => { root.set-cam-video-format("MJPG"); } }
-                                Button { text: "YUYV"; primary: root.cam-video-format == "YUYV"; clicked => { root.set-cam-video-format("YUYV"); } }
-                                Button { text: "H264"; primary: root.cam-video-format == "H264"; clicked => { root.set-cam-video-format("H264"); } }
-                                Button { text: "NV12"; primary: root.cam-video-format == "NV12"; clicked => { root.set-cam-video-format("NV12"); } }
+                                ConsoleButton { text: "MJPG"; primary: root.cam-video-format == "MJPG"; clicked => { root.set-cam-video-format("MJPG"); } }
+                                ConsoleButton { text: "YUYV"; primary: root.cam-video-format == "YUYV"; clicked => { root.set-cam-video-format("YUYV"); } }
+                                ConsoleButton { text: "H264"; primary: root.cam-video-format == "H264"; clicked => { root.set-cam-video-format("H264"); } }
+                                ConsoleButton { text: "NV12"; primary: root.cam-video-format == "NV12"; clicked => { root.set-cam-video-format("NV12"); } }
                             }
 
                             Text { text: "Bitrate: " + root.cam-video-bitrate + " Mbps"; color: #8b8d91; font-size: 10px; }
@@ -1543,18 +1598,18 @@ export component App inherits Window {
                             Text { text: "Risoluzione"; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "1280x720"; primary: root.cam-photo-resolution == "1280x720"; clicked => { root.set-cam-photo-resolution("1280x720"); } }
-                                Button { text: "1920x1080"; primary: root.cam-photo-resolution == "1920x1080"; clicked => { root.set-cam-photo-resolution("1920x1080"); } }
-                                Button { text: "3840x2160"; primary: root.cam-photo-resolution == "3840x2160"; clicked => { root.set-cam-photo-resolution("3840x2160"); } }
-                                Button { text: "Max sensor"; primary: root.cam-photo-resolution == "max"; clicked => { root.set-cam-photo-resolution("max"); } }
+                                ConsoleButton { text: "1280x720"; primary: root.cam-photo-resolution == "1280x720"; clicked => { root.set-cam-photo-resolution("1280x720"); } }
+                                ConsoleButton { text: "1920x1080"; primary: root.cam-photo-resolution == "1920x1080"; clicked => { root.set-cam-photo-resolution("1920x1080"); } }
+                                ConsoleButton { text: "3840x2160"; primary: root.cam-photo-resolution == "3840x2160"; clicked => { root.set-cam-photo-resolution("3840x2160"); } }
+                                ConsoleButton { text: "Max sensor"; primary: root.cam-photo-resolution == "max"; clicked => { root.set-cam-photo-resolution("max"); } }
                             }
 
                             Text { text: "Formato"; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "JPEG"; primary: root.cam-photo-format == "JPEG"; clicked => { root.set-cam-photo-format("JPEG"); } }
-                                Button { text: "PNG"; primary: root.cam-photo-format == "PNG"; clicked => { root.set-cam-photo-format("PNG"); } }
-                                Button { text: "RAW"; primary: root.cam-photo-format == "RAW"; clicked => { root.set-cam-photo-format("RAW"); } }
+                                ConsoleButton { text: "JPEG"; primary: root.cam-photo-format == "JPEG"; clicked => { root.set-cam-photo-format("JPEG"); } }
+                                ConsoleButton { text: "PNG"; primary: root.cam-photo-format == "PNG"; clicked => { root.set-cam-photo-format("PNG"); } }
+                                ConsoleButton { text: "RAW"; primary: root.cam-photo-format == "RAW"; clicked => { root.set-cam-photo-format("RAW"); } }
                             }
 
                             Text { text: "Qualità JPEG: " + root.cam-photo-quality + "%"; color: #8b8d91; font-size: 10px; }
@@ -1566,10 +1621,10 @@ export component App inherits Window {
                             Text { text: "Timer (s): " + root.cam-photo-timer; color: #8b8d91; font-size: 10px; }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "0"; primary: root.cam-photo-timer == 0; clicked => { root.set-cam-photo-timer(0); } }
-                                Button { text: "3"; primary: root.cam-photo-timer == 3; clicked => { root.set-cam-photo-timer(3); } }
-                                Button { text: "5"; primary: root.cam-photo-timer == 5; clicked => { root.set-cam-photo-timer(5); } }
-                                Button { text: "10"; primary: root.cam-photo-timer == 10; clicked => { root.set-cam-photo-timer(10); } }
+                                ConsoleButton { text: "0"; primary: root.cam-photo-timer == 0; clicked => { root.set-cam-photo-timer(0); } }
+                                ConsoleButton { text: "3"; primary: root.cam-photo-timer == 3; clicked => { root.set-cam-photo-timer(3); } }
+                                ConsoleButton { text: "5"; primary: root.cam-photo-timer == 5; clicked => { root.set-cam-photo-timer(5); } }
+                                ConsoleButton { text: "10"; primary: root.cam-photo-timer == 10; clicked => { root.set-cam-photo-timer(10); } }
                             }
                         }
 
@@ -1591,12 +1646,12 @@ export component App inherits Window {
 
                             HorizontalBox {
                                 spacing: 8px;
-                                Button {
+                                ConsoleButton {
                                     text: root.cam-auto-exposure ? "Auto exp: ON" : "Auto exp: OFF";
                                     primary: root.cam-auto-exposure;
                                     clicked => { root.toggle-cam-auto-exposure(); }
                                 }
-                                Button {
+                                ConsoleButton {
                                     text: root.cam-auto-wb ? "Auto WB: ON" : "Auto WB: OFF";
                                     primary: root.cam-auto-wb;
                                     clicked => { root.toggle-cam-auto-wb(); }
@@ -1618,12 +1673,12 @@ export component App inherits Window {
 
                             HorizontalBox {
                                 spacing: 6px;
-                                Button { text: "+ Blur"; clicked => { root.add-camera-effect("blur"); } }
-                                Button { text: "+ Color grade"; clicked => { root.add-camera-effect("color_grade"); } }
-                                Button { text: "+ Vignette"; clicked => { root.add-camera-effect("vignette"); } }
-                                Button { text: "+ Mirror"; clicked => { root.add-camera-effect("mirror"); } }
-                                Button { text: "+ Overlay"; clicked => { root.add-camera-effect("overlay"); } }
-                                Button { text: "+ Sharpen"; clicked => { root.add-camera-effect("sharpen"); } }
+                                ConsoleButton { text: "+ Blur"; clicked => { root.add-camera-effect("blur"); } }
+                                ConsoleButton { text: "+ Color grade"; clicked => { root.add-camera-effect("color_grade"); } }
+                                ConsoleButton { text: "+ Vignette"; clicked => { root.add-camera-effect("vignette"); } }
+                                ConsoleButton { text: "+ Mirror"; clicked => { root.add-camera-effect("mirror"); } }
+                                ConsoleButton { text: "+ Overlay"; clicked => { root.add-camera-effect("overlay"); } }
+                                ConsoleButton { text: "+ Sharpen"; clicked => { root.add-camera-effect("sharpen"); } }
                             }
 
                             ScrollView {
@@ -1649,12 +1704,12 @@ export component App inherits Window {
                                                     vertical-alignment: center;
                                                     horizontal-stretch: 1;
                                                 }
-                                                Button {
+                                                ConsoleButton {
                                                     text: fx.enabled ? "ON" : "OFF";
                                                     primary: fx.enabled;
                                                     clicked => { root.toggle-camera-effect(fx.id); }
                                                 }
-                                                Button {
+                                                ConsoleButton {
                                                     text: "✕";
                                                     clicked => { root.remove-camera-effect(fx.id); }
                                                 }
@@ -1850,22 +1905,22 @@ export component App inherits Window {
                             }
                             HorizontalBox {
                                 spacing: 6px;
-                                Button {
+                                ConsoleButton {
                                     text: "0 s";
                                     primary: root.capture-delay == 0;
                                     clicked => { root.set-capture-delay(0); }
                                 }
-                                Button {
+                                ConsoleButton {
                                     text: "2 s";
                                     primary: root.capture-delay == 2;
                                     clicked => { root.set-capture-delay(2); }
                                 }
-                                Button {
+                                ConsoleButton {
                                     text: "5 s";
                                     primary: root.capture-delay == 5;
                                     clicked => { root.set-capture-delay(5); }
                                 }
-                                Button {
+                                ConsoleButton {
                                     text: "10 s";
                                     primary: root.capture-delay == 10;
                                     clicked => { root.set-capture-delay(10); }
@@ -1882,7 +1937,7 @@ export component App inherits Window {
                                 vertical-alignment: center;
                                 width: 80px;
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.capture-clipboard ? "Copia dopo cattura: ON" : "Copia dopo cattura: OFF";
                                 primary: root.capture-clipboard;
                                 clicked => { root.toggle-capture-clipboard(); }
@@ -1937,11 +1992,11 @@ export component App inherits Window {
                 HorizontalBox {
                     spacing: 12px;
                     Rectangle { horizontal-stretch: 1; background: transparent; }
-                    Button {
+                    ConsoleButton {
                         text: "Annulla / Engine";
                         clicked => { root.page = 0; }
                     }
-                    Button {
+                    ConsoleButton {
                         text: "▶  Avvia cattura";
                         primary: true;
                         clicked => { root.start-capture(); }
@@ -1963,7 +2018,7 @@ export component App inherits Window {
                 spacing: 10px;
 
                 HorizontalBox {
-                    Button {
+                    ConsoleButton {
                         text: "← Sonar";
                         clicked => { root.page = 1; }
                     }
@@ -1975,7 +2030,7 @@ export component App inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
-                    Button {
+                    ConsoleButton {
                         text: "Applica preset";
                         primary: true;
                         clicked => { root.load-preset(root.active-preset-id); }
@@ -2005,13 +2060,13 @@ export component App inherits Window {
                                 color: #5a5b5f; font-size: 10px;
                             }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
+                            ConsoleButton {
                                 text: root.eq-enabled ? "EQ: ON" : "EQ: OFF";
                                 primary: root.eq-enabled;
                                 clicked => { root.toggle-eq(); }
                             }
-                            Button { text: "Reset EQ"; clicked => { root.reset-eq(); } }
-                            Button { text: "Applica EQ"; primary: true; clicked => { root.apply-eq(); } }
+                            ConsoleButton { text: "Reset EQ"; clicked => { root.reset-eq(); } }
+                            ConsoleButton { text: "Applica EQ"; primary: true; clicked => { root.apply-eq(); } }
                         }
                         // Graph + faders
                         HorizontalBox {
@@ -2098,21 +2153,21 @@ export component App inherits Window {
                         HorizontalBox {
                             Text { text: "SPATIAL / BOOST"; color: #8b8d91; font-size: 11px; font-weight: 700; }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
+                            ConsoleButton {
                                 text: root.spatial-enabled ? "Spatial: ON" : "Spatial: OFF";
                                 primary: root.spatial-enabled;
                                 clicked => { root.toggle-spatial(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.smart-volume ? "Smart Vol: ON" : "Smart Vol: OFF";
                                 primary: root.smart-volume;
                                 clicked => { root.toggle-smart-volume(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Reset FX";
                                 clicked => { root.reset-all-fx(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: "Applica FX";
                                 primary: true;
                                 clicked => { root.apply-spatial(); }
@@ -2176,32 +2231,32 @@ export component App inherits Window {
                         HorizontalBox {
                             Text { text: "MICROPHONE"; color: #f5a524; font-size: 11px; font-weight: 700; }
                             Rectangle { horizontal-stretch: 1; background: transparent; }
-                            Button {
+                            ConsoleButton {
                                 text: root.mic-muted ? "Unmute" : "Mute";
                                 clicked => { root.toggle-mic-mute(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.mic-highpass ? "HPF: ON" : "HPF: OFF";
                                 primary: root.mic-highpass;
                                 clicked => { root.toggle-mic-highpass(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.mic-noise-gate ? "Gate: ON" : "Gate: OFF";
                                 primary: root.mic-noise-gate;
                                 clicked => { root.toggle-mic-gate(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.mic-lowpass ? "LPF: ON" : "LPF: OFF";
                                 primary: root.mic-lowpass;
                                 clicked => { root.toggle-mic-lowpass(); }
                             }
-                            Button {
+                            ConsoleButton {
                                 text: root.mic-compressor ? "Comp: ON" : "Comp: OFF";
                                 primary: root.mic-compressor;
                                 clicked => { root.toggle-mic-compressor(); }
                             }
-                            Button { text: "Aggiorna"; clicked => { root.refresh-mic-fx(); } }
-                            Button { text: "Applica Mic"; primary: true; clicked => { root.apply-mic-fx(); } }
+                            ConsoleButton { text: "Aggiorna"; clicked => { root.refresh-mic-fx(); } }
+                            ConsoleButton { text: "Applica Mic"; primary: true; clicked => { root.apply-mic-fx(); } }
                         }
                         HorizontalBox {
                             spacing: 10px;
@@ -2271,7 +2326,7 @@ export component App inherits Window {
                     Rectangle { vertical-stretch: 1; background: transparent; }
                     HorizontalBox {
                         Rectangle { horizontal-stretch: 1; background: transparent; }
-                        Button {
+                        ConsoleButton {
                             text: "Chiudi";
                             primary: true;
                             clicked => { root.show-settings = false; }
@@ -2317,7 +2372,7 @@ export component App inherits Window {
                     Rectangle { vertical-stretch: 1; background: transparent; }
                     HorizontalBox {
                         Rectangle { horizontal-stretch: 1; background: transparent; }
-                        Button {
+                        ConsoleButton {
                             text: "OK";
                             primary: true;
                             clicked => { root.show-help = false; }
