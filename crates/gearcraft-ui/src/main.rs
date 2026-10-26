@@ -316,6 +316,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak = ui.as_weak();
+    ui.on_channel_pan(move |id, value| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let model = ui.get_channels();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    if row.id.as_str() == id.as_str() {
+                        row.pan = value;
+                    }
+                    rows.push(row);
+                }
+            }
+            ui.set_channels(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
     ui.on_toggle_channel_preset(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             let model = ui.get_channels();

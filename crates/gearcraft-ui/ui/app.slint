@@ -23,6 +23,7 @@ export struct ChannelRow {
     preset-name: string,
     preset-on: bool,
     apps: string,
+    pan: int,
 }
 
 export struct PresetRow {
@@ -176,12 +177,12 @@ export component App inherits Window {
         { index: 9, freq-label: "16k", gain: 0 },
     ];
     in-out property <[ChannelRow]> channels: [
-        { id: "master", label: "MASTER", color: #8b8d91, volume: 100, muted: false, solo: false, device: "System", device-volume: 100, preset-name: "Default", preset-on: true, apps: "System sounds" },
-        { id: "game", label: "GAME", color: #00e7a0, volume: 100, muted: false, solo: false, device: "GearCraft_Game", device-volume: 100, preset-name: "Game", preset-on: true, apps: "" },
-        { id: "chat", label: "CHAT", color: #3b9eff, volume: 100, muted: false, solo: false, device: "GearCraft_Chat", device-volume: 100, preset-name: "Chat", preset-on: true, apps: "" },
-        { id: "media", label: "MEDIA", color: #e84d8a, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Media", preset-on: true, apps: "" },
-        { id: "aux", label: "AUX", color: #a78bfa, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Aux", preset-on: true, apps: "" },
-        { id: "mic", label: "MIC", color: #f5a524, volume: 100, muted: false, solo: false, device: "Input", device-volume: 100, preset-name: "Mic", preset-on: true, apps: "" },
+        { id: "master", label: "MASTER", color: #8b8d91, volume: 100, muted: false, solo: false, device: "System", device-volume: 100, preset-name: "Default", preset-on: true, apps: "System sounds", pan: 0 },
+        { id: "game", label: "GAME", color: #00e7a0, volume: 100, muted: false, solo: false, device: "GearCraft_Game", device-volume: 100, preset-name: "Game", preset-on: true, apps: "", pan: 0 },
+        { id: "chat", label: "CHAT", color: #3b9eff, volume: 100, muted: false, solo: false, device: "GearCraft_Chat", device-volume: 100, preset-name: "Chat", preset-on: true, apps: "", pan: 0 },
+        { id: "media", label: "MEDIA", color: #e84d8a, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Media", preset-on: true, apps: "", pan: 0 },
+        { id: "aux", label: "AUX", color: #a78bfa, volume: 100, muted: false, solo: false, device: "Default", device-volume: 100, preset-name: "Aux", preset-on: true, apps: "", pan: 0 },
+        { id: "mic", label: "MIC", color: #f5a524, volume: 100, muted: false, solo: false, device: "Input", device-volume: 100, preset-name: "Mic", preset-on: true, apps: "", pan: 0 },
     ];
 
     // Camera (under Sonar)
@@ -237,6 +238,7 @@ export component App inherits Window {
     callback channel-volume(string, int);
     callback channel-mute(string);
     callback channel-solo(string);
+    callback channel-pan(string, int);
     callback toggle-streamer();
     callback toggle-sonar();
     callback refresh-presets();
@@ -971,6 +973,21 @@ export component App inherits Window {
                                 font-size: 10px;
                                 font-family: "monospace";
                                 horizontal-alignment: center;
+                            }
+
+                            // Pan (L/R balance)
+                            HorizontalBox {
+                                spacing: 4px;
+                                alignment: center;
+                                Text { text: "L"; color: #8b8d91; font-size: 9px; vertical-alignment: center; }
+                                Slider {
+                                    horizontal-stretch: 1;
+                                    minimum: -100;
+                                    maximum: 100;
+                                    value: ch.pan;
+                                    changed(v) => { root.channel-pan(ch.id, v); }
+                                }
+                                Text { text: "R"; color: #8b8d91; font-size: 9px; vertical-alignment: center; }
                             }
 
                             HorizontalBox {
