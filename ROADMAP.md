@@ -19,7 +19,7 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 - [x] Device registry + demo devices
 - [x] First HID addon family (mice / keyboards / headsets):
-  - [x] Rival 3 / Rival 5 family (RGB zones, polling, effects)
+  - [x] Rival 3 family (RGB zones, polling, effects)
   - [x] Apex keyboards (uniform RGB)
   - [x] Arctis headsets (battery query stubs)
 - [x] Live USB scanning via `hidapi` (on by default, demo fallback)
@@ -38,7 +38,8 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 - [x] **Audio presets** (JDSP4Linux-style CRUD + device rules + Sonar UI) — see `docs/AUDIO_PRESETS.md`
 - [x] PipeWire filter-chain DSP bridge (EQ, crossfeed) — `dsp_pw`
-- [ ] Auto-apply preset rules on headset connect
+- [x] Auto-apply preset rules on headset connect
+- [x] Game preset auto-switch (Quick Set style)
 
 - [x] **uinput** real macro playback + optional key grab
 - [x] Persist macros + ChatMix to disk (`~/.config/gearcraft/`)
@@ -51,11 +52,11 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 - [ ] Live validation matrix filled on real mice / keyboards / headsets
 - [ ] Per-key / multi-zone keyboard RGB from open captures
 - [x] Live battery HID read path (Arctis write+read; validate on hardware)
-- [ ] Hotplug via udev monitor (replace periodic rescan)
+- [x] Hotplug via udev monitor (replace periodic rescan)
 
 ## Phase 5 — More brands (plugin model)
 
-- [ ] Razer addon skeleton
+- [x] Razer addon (OpenRazer-compat RGB: logo/scroll/matrix)
 - [ ] Logitech (Lightspeed / G HUB subset)
 - [ ] Corsair / iCUE-compatible subset
 - [ ] Addon discovery API for third-party plugins
@@ -78,9 +79,10 @@ Open-source, brand-agnostic peripheral stack for Linux (RGB, macros, ChatMix, pr
 
 ## Near-term priority (next 2–4 weeks)
 
-1. Hardware validation on real devices (Rival 5 `0x183C`, Apex 3 `0x161A` detected live; RGB writes need udev access)  
+1. Hardware validation on real devices (`--features hidapi`)  
 2. First AUR publish  
 3. WirePlumber static ChatMix routes  
 4. Per-device colour profile persistence  
+5. Razer HID RGB write (open captures)  
 
 Contributions welcome — open an issue for device capture logs (Wireshark/USBPcap) or PipeWire routing tips.

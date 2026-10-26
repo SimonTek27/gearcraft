@@ -164,3 +164,16 @@ Creates `gearcraft_game` and `gearcraft_chat` null sinks via `pactl` (pipewire-p
 | `delete_preset_rule` | `device_id`, `route_id?` | Remove rule |
 
 See [docs/AUDIO_PRESETS.md](docs/AUDIO_PRESETS.md).
+
+
+## Device Manager
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `GetDeviceManager` | — | Outputs + policies |
+| `SetDeviceManager` | `state` | Full replace + apply |
+| `SetChannelDevicePolicy` | `policy` | One channel |
+| `LinkAllDevices` | `device_id?`, `enabled` | Same device on all channels |
+| `ApplyDeviceManager` | — | Re-apply loopbacks |
+
+See [docs/DEVICE_MANAGER.md](docs/DEVICE_MANAGER.md).

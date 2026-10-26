@@ -12,15 +12,23 @@ Environment=RUST_LOG=info
 # Live HID scan is on by default; force demo devices with:
 # Environment=GEARCRAFT_DRY=1
 
+# Shared socket location (daemon creates /run/gearcraft and chowns the socket)
+RuntimeDirectory=gearcraft
+RuntimeDirectoryMode=0755
+
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
-ReadWritePaths=/run /tmp
+ReadWritePaths=/run/gearcraft /tmp
 # Allow access to hidraw
 DeviceAllow=/dev/hidraw* rw
 SupplementaryGroups=plugdev
+
+# Graceful shutdown
+KillSignal=SIGTERM
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

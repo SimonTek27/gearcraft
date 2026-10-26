@@ -79,6 +79,73 @@ impl AudioPresetStore {
                 notes: "Presence band lift for chat / podcasts".into(),
             },
             AudioPreset {
+                id: "apex-legends".into(),
+                name: "Apex Legends".into(),
+                effects: AudioEffects {
+                    eq_enabled: true,
+                    eq_bands: vec![
+                        gearcraft_core::EqBand { freq_hz: 80.0, gain_db: -1.5 },
+                        gearcraft_core::EqBand { freq_hz: 250.0, gain_db: -2.0 },
+                        gearcraft_core::EqBand { freq_hz: 1200.0, gain_db: 1.5 },
+                        gearcraft_core::EqBand { freq_hz: 2800.0, gain_db: 3.5 },
+                        gearcraft_core::EqBand { freq_hz: 6000.0, gain_db: 1.0 },
+                    ],
+                    spatial_enabled: true,
+                    spatial_immersion: 15,
+                    spatial_distance: 25,
+                    volume_boost_db: 1.0,
+                    smart_volume: true,
+                    limiter: true,
+                    ..AudioEffects::default()
+                },
+                chatmix: None,
+                notes: "Footsteps / gunfire presence (performance spatial)".into(),
+            },
+            AudioPreset {
+                id: "cs2".into(),
+                name: "Counter-Strike 2".into(),
+                effects: AudioEffects {
+                    eq_enabled: true,
+                    eq_bands: vec![
+                        gearcraft_core::EqBand { freq_hz: 100.0, gain_db: -2.0 },
+                        gearcraft_core::EqBand { freq_hz: 3000.0, gain_db: 4.0 },
+                        gearcraft_core::EqBand { freq_hz: 8000.0, gain_db: 1.5 },
+                    ],
+                    spatial_enabled: true,
+                    spatial_immersion: 10,
+                    spatial_distance: 20,
+                    volume_boost_db: 0.5,
+                    smart_volume: true,
+                    limiter: true,
+                    ..AudioEffects::default()
+                },
+                chatmix: None,
+                notes: "Competitive FPS — directional cues".into(),
+            },
+            AudioPreset {
+                id: "immersion".into(),
+                name: "Immersion / Story".into(),
+                effects: AudioEffects {
+                    eq_enabled: true,
+                    eq_bands: vec![
+                        gearcraft_core::EqBand { freq_hz: 80.0, gain_db: 3.0 },
+                        gearcraft_core::EqBand { freq_hz: 400.0, gain_db: 0.5 },
+                        gearcraft_core::EqBand { freq_hz: 4000.0, gain_db: 1.5 },
+                        gearcraft_core::EqBand { freq_hz: 10000.0, gain_db: 2.0 },
+                    ],
+                    spatial_enabled: true,
+                    spatial_immersion: 85,
+                    spatial_distance: 60,
+                    crossfeed: true,
+                    crossfeed_strength: 25,
+                    volume_boost_db: 0.0,
+                    limiter: true,
+                    ..AudioEffects::default()
+                },
+                chatmix: None,
+                notes: "Single-player / cinematic spatial".into(),
+            },
+            AudioPreset {
                 id: "crossfeed".into(),
                 name: "Crossfeed".into(),
                 effects: AudioEffects {

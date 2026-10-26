@@ -1,0 +1,48 @@
+# Maintainer: GearCraft contributors
+pkgname=gearcraft-git
+pkgver=0.1.0.r0.g0
+pkgrel=1
+pkgdesc="Open-source Linux gaming peripheral hub (RGB, Sonar-like audio, Prism)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/SimonTek27/gearcraft"
+license=('MIT')
+depends=('pipewire' 'wireplumber' 'gcc-libs')
+optdepends=(
+  'openrazer-daemon: official Razer RGB'
+  'openrgb: multi-vendor RGB + PrismSync'
+  'piper: mouse DPI (ratbagd)'
+  'libratbag: ratbagctl backend'
+  'swh-plugins: LADSPA gate/compressor/BS2B'
+  'spectacle: KDE screenshots'
+  'grim: Wayland screenshots'
+  'slurp: region select'
+)
+makedepends=('git' 'cargo' 'pkgconf' 'systemd')
+provides=('gearcraft')
+conflicts=('gearcraft')
+source=("git+${url}.git")
+sha256sums=('SKIP')
+install=gearcraft.install
+
+pkgver() {
+  cd gearcraft
+  git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' \
+    || printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd gearcraft
+  cargo build --release --locked 2>/dev/null || cargo build --release
+}
+
+package() {
+  cd gearcraft
+  install -Dm755 target/release/gearcraft-daemon "$pkgdir/usr/bin/gearcraft-daemon"
+  install -Dm755 target/release/gearcraft-ui "$pkgdir/usr/bin/gearcraft-ui"
+  install -Dm644 packaging/gearcraft-daemon.service \
+    "$pkgdir/usr/lib/systemd/user/gearcraft-daemon.service"
+  install -Dm644 packaging/udev/99-gearcraft.rules \
+    "$pkgdir/usr/lib/udev/rules.d/99-gearcraft.rules"
+  install -Dm644 packaging/aur/gearcraft.desktop \
+    "$pkgdir/usr/share/applications/gearcraft.desktop"
+}

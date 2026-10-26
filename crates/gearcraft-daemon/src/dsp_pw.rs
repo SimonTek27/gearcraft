@@ -69,6 +69,8 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
     if fx.bass_boost {
         preamp -= fx.bass_boost_db.max(0.0) * 0.25;
     }
+    // Volume boost is intentional headroom usage (user control)
+    preamp += fx.volume_boost_db.clamp(-12.0, 12.0);
     if fx.limiter {
         preamp = preamp.min(fx.limiter_db);
     }
@@ -106,6 +108,97 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
 
     if fx.bass_boost && fx.bass_boost_db.abs() > 0.05 {
         push("gc_bass", "bq_lowshelf", 80.0, 0.7, fx.bass_boost_db);
+    }
+
+    // Spatial (Sonar-style performance ↔ immersion)
+    if fx.spatial_enabled {
+        let imm = (fx.spatial_immersion as f32 / 100.0).clamp(0.0, 1.0);
+        let dist = (fx.spatial_distance as f32 / 100.0).clamp(0.0, 1.0);
+        // Performance: mid presence for footsteps; Immersion: wider air + softer mids
+        let mid_gain = 3.5 * (1.0 - imm) - 1.5 * imm;
+        let air_gain = 2.0 * imm;
+        let low_cut = -1.5 * dist; // "far" speakers = slightly less near-field bass
+        if mid_gain.abs() > 0.1 {
+            push("gc_spatial_mid", "bq_peaking", 2500.0, 1.2, mid_gain);
+        }
+        if air_gain.abs() > 0.1 {
+            push("gc_spatial_air", "bq_highshelf", 6000.0, 0.7, air_gain);
+        }
+        if low_cut.abs() > 0.1 {
+            push("gc_spatial_dist", "bq_lowshelf", 120.0, 0.7, low_cut);
+        }
+        // Performance leans toward more crossfeed-like mono blend via wideness inverse
+        // Immersion uses wideness if not already set
+        if imm > 0.55 && !fx.wideness {
+            // soft stereo emphasis via high shelf already applied
+        }
+    }
+
+    if fx.smart_volume {
+        // Mild presence lift as a stand-in for smart leveling
+        push("gc_smart", "bq_peaking", 1000.0, 0.9, 1.5);
+    }
+
+    
+    if fx.lowpass {
+        let hz = if fx.lowpass_hz > 0.0 {
+            fx.lowpass_hz.clamp(2000.0, 20000.0)
+        } else {
+            12000.0
+        };
+        // bq_lowpass may ignore Gain; pass 0
+        nodes.push(format!(
+            r#"{{"type":"builtin","name":"gc_lowpass","label":"bq_lowpass","control":{{"Freq":{hz:.1},"Q":0.707}}}}"#
+        ));
+        if let Some(ref p) = prev {
+            links.push(format!(
+                r#"{{"output":"{p}:Out","input":"gc_lowpass:In"}}"#
+            ));
+        }
+        prev = Some("gc_lowpass".to_string());
+    }
+
+    if fx.compressor {
+        let strength = (fx.compressor_strength as f32 / 100.0).clamp(0.05, 1.0);
+        if let Some(plugin) = find_ladspa_sc4() {
+            let threshold = -24.0 + (1.0 - strength) * 12.0; // strong → lower threshold
+            let ratio = 2.0 + strength * 6.0;
+            let name = "gc_comp";
+            nodes.push(format!(
+                r#"{{"type":"ladspa","name":"{name}","plugin":"{plugin}","label":"sc4","control":{{"RMS/peak":0,"Attack time (ms)":10,"Release time (ms)":100,"Threshold level (dB)":{threshold:.1},"Ratio (1:n)":{ratio:.1},"Knee radius (dB)":4,"Makeup gain (dB)":{makeup:.1}}}}}"#,
+                makeup = strength * 3.0,
+            ));
+            if let Some(ref p) = prev {
+                links.push(format!(
+                    r#"{{"output":"{p}:Out","input":"{name}:In"}}"#
+                ));
+            }
+            prev = Some(name.to_string());
+        } else {
+            // Soft "compression": gentle high-mid dip + makeup via shelf
+            let cut = -1.5 * strength;
+            let make = 1.0 * strength;
+            nodes.push(format!(
+                r#"{{"type":"builtin","name":"gc_comp_soft","label":"bq_peaking","control":{{"Freq":2000.0,"Q":0.8,"Gain":{cut:.2}}}}}"#
+            ));
+            if let Some(ref p) = prev {
+                links.push(
+                    r#"{"output":"prev_placeholder","input":"gc_comp_soft:In"}"#.replace(
+                        "prev_placeholder", p
+                    ),
+                );
+            }
+            prev = Some("gc_comp_soft".to_string());
+            nodes.push(format!(
+                r#"{{"type":"builtin","name":"gc_comp_makeup","label":"bq_highshelf","control":{{"Freq":0.0,"Q":1.0,"Gain":{make:.2}}}}}"#
+            ));
+            if let Some(ref p) = prev {
+                links.push(format!(
+                    r#"{{"output":"{p}:Out","input":"gc_comp_makeup:In"}}"#
+                ));
+            }
+            prev = Some("gc_comp_makeup".to_string());
+        }
     }
 
     // Crossfeed: LADSPA bs2b when present
@@ -177,6 +270,21 @@ pub fn build_filter_chain_json(fx: &AudioEffects) -> String {
         nodes = nodes.join(",\n      "),
         links = links.join(",\n      "),
     )
+}
+
+fn find_ladspa_sc4() -> Option<String> {
+    for c in [
+        "/usr/lib/ladspa/sc4_1882.so",
+        "/usr/lib64/ladspa/sc4_1882.so",
+        "/usr/lib/x86_64-linux-gnu/ladspa/sc4_1882.so",
+        "/usr/lib/ladspa/sc4m_1916.so",
+        "/usr/lib64/ladspa/sc4m_1916.so",
+    ] {
+        if PathBuf::from(c).exists() {
+            return Some(c.to_string());
+        }
+    }
+    None
 }
 
 fn find_bs2b_plugin() -> Option<String> {
@@ -260,8 +368,13 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
     let eq_on = fx.eq_enabled && fx.eq_bands.iter().any(|b| b.gain_db.abs() >= 0.05);
     let xf_on = fx.crossfeed && fx.crossfeed_strength > 0;
     let bass_on = fx.bass_boost && fx.bass_boost_db.abs() >= 0.05;
+    let spatial_on = fx.spatial_enabled;
+    let lp_on = fx.lowpass;
+    let comp_on = fx.compressor;
+    let boost_on = fx.volume_boost_db.abs() >= 0.05;
+    let conv_on = fx.convolver_enable && !fx.convolver_file.is_empty();
 
-    if !eq_on && !xf_on && !bass_on {
+    if !eq_on && !xf_on && !bass_on && !spatial_on && !lp_on && !comp_on && !boost_on && !fx.smart_volume && !conv_on {
         return clear_effects().await;
     }
 
@@ -308,6 +421,16 @@ pub async fn apply_effects(fx: &AudioEffects) -> Result<DspApplyResult, String> 
     let mut message = format!(
         "WirePlumber filter-chain loaded (wpexec pid {pid}); sink «{SINK_DESC}» ({NODE_NAME})"
     );
+    if fx.convolver_enable {
+        if fx.convolver_file.is_empty() {
+            message.push_str("; convolver enabled but no IR file set");
+        } else {
+            message.push_str(&format!(
+                "; convolver IR «{}» (mix {}%) — use EasyEffects/JDSP for full partitioned convolver",
+                fx.convolver_file, fx.convolver_mix
+            ));
+        }
+    }
     if xf_on && find_bs2b_plugin().is_none() {
         message.push_str("; crossfeed: soft mixer (install ladspa-bs2b for BS2B)");
     } else if xf_on {

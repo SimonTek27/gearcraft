@@ -36,30 +36,24 @@ impl DeviceRegistry {
 
     pub fn refresh(&mut self) {
         let mut found = usb::scan_devices();
-        let using_demo = found.is_empty();
-        if using_demo {
-            found = demo_devices();
-        }
-
-        // Hotplug poll runs every 15 s: rebuild addons only when the device
-        // set (ids/paths) actually changed, to avoid re-initialising hardware
-        // on every tick.
-        let unchanged = found.len() == self.devices.len()
-            && found
-                .iter()
-                .zip(self.devices.iter())
-                .all(|(new, old)| new.id == old.id && new.path == old.path);
-        if unchanged && !self.addons.is_empty() {
-            return;
-        }
-
-        if using_demo {
-            info!("No live devices – loading demo registry");
+        // Demo devices only when explicitly requested (avoids masking missing udev/permissions)
+        if found.is_empty() {
+            if std::env::var("GEARCRAFT_DEMO").ok().as_deref() == Some("1") {
+                info!("No live devices – loading demo registry (GEARCRAFT_DEMO=1)");
+                found = demo_devices();
+            } else {
+                info!("No live devices – empty registry (set GEARCRAFT_DEMO=1 for sample gear)");
+            }
         }
         self.devices = found;
         self.addons.clear();
         for dev in &self.devices {
             if let Some(mut addon) = addons::steelseries::try_create(dev) {
+                if let Err(e) = addon.initialize() {
+                    warn!("addon init failed for {}: {e}", dev.id);
+                }
+                self.addons.insert(dev.id.clone(), addon);
+            } else if let Some(mut addon) = addons::razer::try_create(dev) {
                 if let Err(e) = addon.initialize() {
                     warn!("addon init failed for {}: {e}", dev.id);
                 }
@@ -81,6 +75,17 @@ impl DeviceRegistry {
         self.devices.iter().find(|d| d.id == id)
     }
 
+    pub fn device_vendor_name(&self, device_id: &str) -> (String, String) {
+        if let Some(d) = self.devices.iter().find(|d| d.id == device_id) {
+            return (d.vendor.clone(), d.name.clone());
+        }
+        if let Some(a) = self.addons.get(device_id) {
+            let info = a.device_info();
+            return (info.vendor, info.name);
+        }
+        (String::new(), device_id.to_string())
+    }
+
     pub fn set_color(
         &mut self,
         device_id: &str,
@@ -92,6 +97,22 @@ impl DeviceRegistry {
             .get_mut(device_id)
             .ok_or_else(|| format!("no addon for device: {device_id}"))?;
         addon.set_color(zone, color).map_err(|e| e.to_string())
+    }
+
+    pub fn set_effect(
+        &mut self,
+        device_id: &str,
+        zone: &str,
+        effect: &str,
+        color: Option<RgbColor>,
+    ) -> Result<(), String> {
+        let addon = self
+            .addons
+            .get_mut(device_id)
+            .ok_or_else(|| format!("no addon for device: {device_id}"))?;
+        addon
+            .set_effect(zone, effect, color)
+            .map_err(|e| e.to_string())
     }
 
     pub fn apply_profile(
@@ -152,6 +173,7 @@ pub struct SharedState {
     pub macros: Arc<RwLock<MacroStore>>,
     pub chatmix: Arc<RwLock<ChatMixState>>,
     pub audio_presets: Arc<RwLock<crate::audio_presets::AudioPresetStore>>,
+    pub device_manager: Arc<RwLock<crate::device_manager::DeviceManager>>,
 }
 
 pub async fn run_server(
@@ -166,30 +188,83 @@ pub async fn run_server(
     }
 
     let listener = UnixListener::bind(&path)?;
-    info!("GearCraft daemon IPC listening on {}", path.display());
-
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let registry = Arc::clone(&state.registry);
-                let macros = Arc::clone(&state.macros);
-                let chatmix = Arc::clone(&state.chatmix);
-                let audio_presets = Arc::clone(&state.audio_presets);
-                tokio::spawn(async move {
-                    let st = SharedState {
-                        registry,
-                        macros,
-                        chatmix,
-                        audio_presets,
-                    };
-                    if let Err(e) = handle_client(stream, st).await {
-                        warn!("client handler error: {e}");
+    // Make the socket reachable by members of the plugdev group (udev flow).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o660));
+        if let Some(gid) = plugdev_gid() {
+            if let Some(p) = path.to_str() {
+                if let Ok(cpath) = std::ffi::CString::new(p) {
+                    unsafe {
+                        libc::chown(cpath.as_ptr(), u32::MAX, gid);
                     }
-                });
+                }
             }
-            Err(e) => error!("accept error: {e}"),
         }
     }
+    info!("GearCraft daemon IPC listening on {}", path.display());
+
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+
+    loop {
+        tokio::select! {
+            res = listener.accept() => {
+                match res {
+                    Ok((stream, _)) => {
+                        let registry = Arc::clone(&state.registry);
+                        let macros = Arc::clone(&state.macros);
+                        let chatmix = Arc::clone(&state.chatmix);
+                        let audio_presets = Arc::clone(&state.audio_presets);
+                        let device_manager = Arc::clone(&state.device_manager);
+                        tokio::spawn(async move {
+                            let st = SharedState {
+                                registry,
+                                macros,
+                                chatmix,
+                                audio_presets,
+                                device_manager,
+                            };
+                            if let Err(e) = handle_client(stream, st).await {
+                                warn!("client handler error: {e}");
+                            }
+                        });
+                    }
+                    Err(e) => error!("accept error: {e}"),
+                }
+            }
+            _ = sigterm.recv() => {
+                info!("SIGTERM received — shutting down");
+                break;
+            }
+            _ = sigint.recv() => {
+                info!("SIGINT received — shutting down");
+                break;
+            }
+        }
+    }
+
+    let _ = std::fs::remove_file(&path);
+    Ok(())
+}
+
+fn plugdev_gid() -> Option<u32> {
+    let content = std::fs::read_to_string("/etc/group").ok()?;
+    for line in content.lines() {
+        let mut parts = line.split(':');
+        match parts.next() {
+            Some("plugdev") => {}
+            _ => continue,
+        }
+        let _ = parts.next(); // password
+        if let Some(gid) = parts.next() {
+            if let Ok(g) = gid.parse() {
+                return Some(g);
+            }
+        }
+    }
+    None
 }
 
 async fn handle_client(
@@ -295,15 +370,101 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
             }
         }
 
+        IpcCommand::SetRgbEffect {
+            device_id,
+            zone,
+            effect,
+            color,
+        } => {
+            let (vendor, name) = {
+                let reg = state.registry.read().await;
+                reg.device_vendor_name(&device_id)
+            };
+            let mut used_official = false;
+            let mut official_err = None;
+            match crate::drivers::set_effect_official(
+                &vendor, &name, &zone, &effect, color.clone(),
+            )
+            .await
+            {
+                Ok(true) => used_official = true,
+                Ok(false) => {}
+                Err(e) => official_err = Some(e),
+            }
+            if used_official {
+                IpcResponse::success(
+                    id,
+                    serde_json::json!({
+                        "device_id": device_id,
+                        "zone": zone,
+                        "effect": effect,
+                        "backend": "official",
+                    }),
+                )
+            } else {
+                let mut reg = state.registry.write().await;
+                match reg.set_effect(&device_id, &zone, &effect, color) {
+                    Ok(()) => IpcResponse::success(
+                        id,
+                        serde_json::json!({
+                            "device_id": device_id,
+                            "zone": zone,
+                            "effect": effect,
+                            "backend": "hid",
+                            "official_error": official_err,
+                        }),
+                    ),
+                    Err(e) => {
+                        let msg = match official_err {
+                            Some(oe) => format!("{e}; official: {oe}"),
+                            None => e,
+                        };
+                        IpcResponse::failure(id, msg)
+                    }
+                }
+            }
+        }
         IpcCommand::SetColor {
             device_id,
             zone,
             color,
         } => {
-            let mut reg = state.registry.write().await;
-            match reg.set_color(&device_id, &zone, color) {
-                Ok(()) => IpcResponse::success(id, serde_json::json!({ "set": true })),
-                Err(e) => IpcResponse::failure(id, e),
+            // Prefer official drivers (OpenRazer / OpenRGB)
+            let (vendor, name) = {
+                let reg = state.registry.read().await;
+                reg.device_vendor_name(&device_id)
+            };
+            let mut used_official = false;
+            let mut official_err = None;
+            match crate::drivers::set_color_official(&vendor, &name, &zone, color.clone()).await {
+                Ok(true) => used_official = true,
+                Ok(false) => {}
+                Err(e) => official_err = Some(e),
+            }
+            if used_official {
+                IpcResponse::success(
+                    id,
+                    serde_json::json!({ "set": true, "backend": "official" }),
+                )
+            } else {
+                let mut reg = state.registry.write().await;
+                match reg.set_color(&device_id, &zone, color) {
+                    Ok(()) => IpcResponse::success(
+                        id,
+                        serde_json::json!({
+                            "set": true,
+                            "backend": "hid",
+                            "official_error": official_err,
+                        }),
+                    ),
+                    Err(e) => {
+                        let msg = match official_err {
+                            Some(oe) => format!("{e}; official: {oe}"),
+                            None => e,
+                        };
+                        IpcResponse::failure(id, msg)
+                    }
+                }
             }
         }
 
@@ -495,6 +656,256 @@ async fn dispatch(request: IpcRequest, state: &SharedState) -> IpcResponse {
             match store.delete_rule(&device_id, &route_id) {
                 Ok(true) => IpcResponse::success(id, serde_json::json!({ "deleted": true })),
                 Ok(false) => IpcResponse::failure(id, "rule not found"),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+
+        IpcCommand::GetDeviceManager => {
+            let dm = state.device_manager.read().await;
+            let snap = crate::device_manager::snapshot(&dm).await;
+            IpcResponse::success(id, snap)
+        }
+
+        IpcCommand::SetDeviceManager { state: new_state } => {
+            let mut dm = state.device_manager.write().await;
+            dm.set_state(new_state);
+            match crate::device_manager::apply(&mut dm).await {
+                Ok(v) => IpcResponse::success(id, v),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::SetChannelDevicePolicy { policy } => {
+            let mut dm = state.device_manager.write().await;
+            dm.set_policy(policy);
+            match crate::device_manager::apply(&mut dm).await {
+                Ok(v) => IpcResponse::success(id, v),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::LinkAllDevices { device_id, enabled } => {
+            let mut dm = state.device_manager.write().await;
+            dm.link_all(device_id, enabled);
+            match crate::device_manager::apply(&mut dm).await {
+                Ok(v) => IpcResponse::success(id, v),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::ApplyDeviceManager => {
+            let mut dm = state.device_manager.write().await;
+            match crate::device_manager::apply(&mut dm).await {
+                Ok(v) => IpcResponse::success(id, v),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::ApplyAudioEffects { effects } => {
+            match crate::dsp_pw::apply_effects(&effects).await {
+                Ok(dsp) => IpcResponse::success(
+                    id,
+                    serde_json::json!({
+                        "applied": dsp.applied,
+                        "message": dsp.message,
+                        "eq": dsp.eq,
+                        "crossfeed": dsp.crossfeed,
+                    }),
+                ),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::GetMicFx => {
+            let state = crate::mic_fx::read_mic_snapshot().await;
+            IpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
+        }
+        IpcCommand::SetMicFx { state } => {
+            match crate::mic_fx::apply_mic_fx(&state).await {
+                Ok(r) => IpcResponse::success(
+                    id,
+                    serde_json::json!({
+                        "applied": r.applied,
+                        "source": r.source,
+                        "message": r.message,
+                        "state": state,
+                    }),
+                ),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::ImportJamesDspPreset {
+            name,
+            path,
+            content,
+            apply,
+        } => {
+            let preset = if let Some(p) = path {
+                match crate::jamesdsp_import::import_file(std::path::Path::new(&p)) {
+                    Ok(mut pr) => {
+                        if let Some(n) = name {
+                            pr.id = {
+                                let s: String = n
+                                    .chars()
+                                    .map(|c| {
+                                        if c.is_ascii_alphanumeric() {
+                                            c.to_ascii_lowercase()
+                                        } else {
+                                            '-'
+                                        }
+                                    })
+                                    .collect();
+                                format!("jdsp-{}", s.trim_matches('-'))
+                            };
+                            pr.name = n;
+                        }
+                        pr
+                    }
+                    Err(e) => return IpcResponse::failure(id, e),
+                }
+            } else if let Some(c) = content {
+                let n = name.unwrap_or_else(|| "JamesDSP Import".into());
+                match crate::jamesdsp_import::import_string(&n, &c) {
+                    Ok(pr) => pr,
+                    Err(e) => return IpcResponse::failure(id, e),
+                }
+            } else {
+                return IpcResponse::failure(id, "path or content required".to_string());
+            };
+
+            {
+                let mut store = state.audio_presets.write().await;
+                if let Err(e) = store.save(preset.clone()) {
+                    return IpcResponse::failure(id, e);
+                }
+            }
+            let mut applied = serde_json::Value::Null;
+            if apply {
+                match crate::audio_presets::apply_preset_runtime(&preset).await {
+                    Ok(v) => applied = v,
+                    Err(e) => {
+                        return IpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "preset": preset,
+                                "saved": true,
+                                "apply_error": e,
+                            }),
+                        );
+                    }
+                }
+            }
+            IpcResponse::success(
+                id,
+                serde_json::json!({
+                    "preset": preset,
+                    "saved": true,
+                    "applied": applied,
+                }),
+            )
+        }
+
+        IpcCommand::ImportJamesDspDir { path, apply_first } => {
+            match crate::jamesdsp_import::import_dir(std::path::Path::new(&path)) {
+                Ok(list) => {
+                    let mut ids = Vec::new();
+                    {
+                        let mut store = state.audio_presets.write().await;
+                        for pr in &list {
+                            if store.save(pr.clone()).is_ok() {
+                                ids.push(pr.id.clone());
+                            }
+                        }
+                    }
+                    let mut applied = serde_json::Value::Null;
+                    if apply_first {
+                        if let Some(first) = list.first() {
+                            if let Ok(v) =
+                                crate::audio_presets::apply_preset_runtime(first).await
+                            {
+                                applied = v;
+                            }
+                        }
+                    }
+                    IpcResponse::success(
+                        id,
+                        serde_json::json!({
+                            "imported": ids.len(),
+                            "ids": ids,
+                            "applied": applied,
+                        }),
+                    )
+                }
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::GetMouseInfo { device_id } => {
+            let (_, name) = {
+                let reg = state.registry.read().await;
+                reg.device_vendor_name(&device_id)
+            };
+            if !crate::drivers::ratbag::available().await {
+                IpcResponse::failure(
+                    id,
+                    "ratbagctl not found — install piper/libratbag (ratbagd)".to_string(),
+                )
+            } else {
+                match crate::drivers::ratbag::get_mouse_info(&name).await {
+                    Ok(info) => IpcResponse::success(id, serde_json::to_value(info).unwrap_or_default()),
+                    Err(e) => IpcResponse::failure(id, e),
+                }
+            }
+        }
+
+        IpcCommand::SetDpi {
+            device_id,
+            dpi,
+            profile,
+        } => {
+            let (_, name) = {
+                let reg = state.registry.read().await;
+                reg.device_vendor_name(&device_id)
+            };
+            match crate::drivers::ratbag::set_dpi(&name, dpi, profile).await {
+                Ok(msg) => IpcResponse::success(id, serde_json::json!({ "message": msg, "dpi": dpi })),
+                Err(e) => IpcResponse::failure(id, e),
+            }
+        }
+
+        IpcCommand::PrismSync {
+            effect,
+            zone,
+            color,
+        } => match crate::drivers::prism_sync(&effect, &zone, color).await {
+            Ok(v) => IpcResponse::success(id, v),
+            Err(e) => IpcResponse::failure(id, e),
+        },
+
+        IpcCommand::TakeScreenshot {
+            mode,
+            delay_secs,
+            copy_clipboard,
+            save_dir,
+        } => {
+            match crate::screenshot::capture(
+                &mode,
+                delay_secs,
+                copy_clipboard,
+                save_dir.as_deref(),
+            )
+            .await
+            {
+                Ok(r) => IpcResponse::success(
+                    id,
+                    serde_json::json!({
+                        "path": r.path,
+                        "backend": r.backend,
+                        "message": r.message,
+                    }),
+                ),
                 Err(e) => IpcResponse::failure(id, e),
             }
         }

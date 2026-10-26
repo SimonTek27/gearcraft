@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=GearCraft
+Comment=Linux gaming peripheral hub
+Exec=gearcraft-ui
+Icon=audio-headphones
+Terminal=false
+Type=Application
+Categories=Utility;Audio;Game;

@@ -5,8 +5,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use gearcraft_core::{
-    default_socket_path, AudioPreset, IpcCommand, IpcRequest, IpcResponse, PresetRule,
-    RgbColor,
+    default_socket_path, AudioEffects, AudioPreset, MicFxState, ChannelDevicePolicy, IpcCommand, IpcRequest,
+    IpcResponse, PresetRule, RgbColor,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -140,5 +140,112 @@ pub fn delete_preset_rule(device_id: &str, route_id: &str) -> Result<Value, IpcE
     request(IpcCommand::DeletePresetRule {
         device_id: device_id.to_string(),
         route_id: route_id.to_string(),
+    })
+}
+
+
+pub fn get_device_manager() -> Result<Value, IpcError> {
+    request(IpcCommand::GetDeviceManager)
+}
+
+pub fn apply_device_manager() -> Result<Value, IpcError> {
+    request(IpcCommand::ApplyDeviceManager)
+}
+
+pub fn link_all_devices(device_id: Option<String>, enabled: bool) -> Result<Value, IpcError> {
+    request(IpcCommand::LinkAllDevices { device_id, enabled })
+}
+
+pub fn set_channel_device_policy(policy: ChannelDevicePolicy) -> Result<Value, IpcError> {
+    request(IpcCommand::SetChannelDevicePolicy { policy })
+}
+
+
+pub fn apply_audio_effects(effects: AudioEffects) -> Result<Value, IpcError> {
+    request(IpcCommand::ApplyAudioEffects { effects })
+}
+
+
+pub fn get_mic_fx() -> Result<Value, IpcError> {
+    request(IpcCommand::GetMicFx)
+}
+
+pub fn set_mic_fx(state: MicFxState) -> Result<Value, IpcError> {
+    request(IpcCommand::SetMicFx { state })
+}
+
+
+pub fn set_rgb_effect(
+    device_id: &str,
+    zone: &str,
+    effect: &str,
+    color: Option<RgbColor>,
+) -> Result<(), IpcError> {
+    request(IpcCommand::SetRgbEffect {
+        device_id: device_id.to_string(),
+        zone: zone.to_string(),
+        effect: effect.to_string(),
+        color,
+    })?;
+    Ok(())
+}
+
+
+pub fn take_screenshot(
+    mode: &str,
+    delay_secs: u8,
+    copy_clipboard: bool,
+) -> Result<Value, IpcError> {
+    request(IpcCommand::TakeScreenshot {
+        mode: mode.to_string(),
+        delay_secs,
+        copy_clipboard,
+        save_dir: None,
+    })
+}
+
+
+#[allow(dead_code)]
+pub fn import_jamesdsp_path(path: &str, apply: bool) -> Result<Value, IpcError> {
+    request(IpcCommand::ImportJamesDspPreset {
+        name: None,
+        path: Some(path.to_string()),
+        content: None,
+        apply,
+    })
+}
+
+#[allow(dead_code)]
+pub fn import_jamesdsp_dir(path: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::ImportJamesDspDir {
+        path: path.to_string(),
+        apply_first: false,
+    })
+}
+
+
+pub fn get_mouse_info(device_id: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::GetMouseInfo {
+        device_id: device_id.to_string(),
+    })
+}
+
+pub fn set_dpi(device_id: &str, dpi: u32, profile: u32) -> Result<Value, IpcError> {
+    request(IpcCommand::SetDpi {
+        device_id: device_id.to_string(),
+        dpi,
+        profile,
+    })
+}
+
+pub fn prism_sync(
+    effect: &str,
+    zone: &str,
+    color: Option<RgbColor>,
+) -> Result<Value, IpcError> {
+    request(IpcCommand::PrismSync {
+        effect: effect.to_string(),
+        zone: zone.to_string(),
+        color,
     })
 }

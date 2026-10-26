@@ -11,9 +11,6 @@ name = "gearcraft-daemon"
 path = "src/main.rs"
 
 [features]
-# Live HID scanning is on by default: the `linux-static-hidraw` backend is pure
-# Rust and needs no system libraries. Use `--no-default-features` for a
-# demo-only build (or on non-Linux hosts).
 default = ["hidapi"]
 hidapi = ["dep:hidapi"]
 

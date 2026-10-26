@@ -2,6 +2,13 @@
 
 mod addons;
 mod app_routing;
+mod hotplug;
+mod device_manager;
+mod game_presets;
+mod mic_fx;
+mod drivers;
+mod screenshot;
+mod jamesdsp_import;
 mod audio_presets;
 mod chatmix_pw;
 mod dsp_pw;
@@ -14,7 +21,7 @@ mod usb;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::{info, warn, Level};
+use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 
 use ipc::{run_server, DeviceRegistry, SharedState};
@@ -45,7 +52,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = config::load_settings();
     let backend = chatmix_pw::detect_sinks().await;
     info!("ChatMix audio: {} – {}", backend.backend, backend.message);
-    // DSP bridge diagnostics: wpexec/wpctl availability, filter-chain pid, LADSPA
     info!("DSP status: {}", dsp_pw::dsp_status().await);
     info!(
         "ChatMix balance from config: {} (game {}% / chat {}%)",
@@ -69,58 +75,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("macros in store: {}", macros.list().len());
 
     let audio_presets = AudioPresetStore::load();
+    let device_manager = device_manager::DeviceManager::load();
 
     let state = SharedState {
         registry: Arc::new(RwLock::new(registry)),
         macros: Arc::new(RwLock::new(macros)),
         chatmix: Arc::new(RwLock::new(settings.chatmix)),
         audio_presets: Arc::new(RwLock::new(audio_presets)),
+        device_manager: Arc::new(RwLock::new(device_manager)),
     };
 
-    let reg_scan = Arc::clone(&state.registry);
     // Auto-route apps → Sonar channels (Discord→chat, Haruna→media, …)
     tokio::spawn(async move {
         app_routing::run_loop(2).await;
     });
 
-    let preset_scan = Arc::clone(&state.audio_presets);
+    let presets_game = Arc::clone(&state.audio_presets);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
-        // Device ids seen at the previous tick — used to detect connects
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        game_presets::run_loop(presets_game, 4).await;
+    });
+
+    // USB hotplug + auto-apply audio presets on connect
+    let reg_hp = Arc::clone(&state.registry);
+    let presets_hp = Arc::clone(&state.audio_presets);
+    tokio::spawn(async move {
+        hotplug::run(reg_hp, presets_hp).await;
+    });
+
+    // Device Manager failover (primary sink lost → next priority)
+    let dm_tick = Arc::clone(&state.device_manager);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
         loop {
             interval.tick().await;
-            let (appeared, now) = {
-                let mut reg = reg_scan.write().await;
-                reg.refresh();
-                let ids: std::collections::HashSet<String> =
-                    reg.list().iter().map(|d| d.id.clone()).collect();
-                let appeared: Vec<String> = ids
-                    .iter()
-                    .filter(|id| !seen.contains(*id))
-                    .cloned()
-                    .collect();
-                (appeared, ids)
-            };
-            seen = now;
-
-            for id in appeared {
-                let preset = {
-                    let store = preset_scan.read().await;
-                    store.rule_for(&id, "").cloned()
-                };
-                if let Some(p) = preset {
-                    info!(
-                        "device {id} connected → auto-applying preset '{}' ({})",
-                        p.name, p.id
-                    );
-                    if let Err(e) = audio_presets::apply_preset_runtime(&p).await {
-                        warn!("auto-apply preset for {id} failed: {e}");
-                    }
-                }
-            }
+            let mut dm = dm_tick.write().await;
+            device_manager::failover_tick(&mut dm).await;
         }
     });
+
+    // Initial apply if auto_switch_on_startup
+    {
+        let mut dm = state.device_manager.write().await;
+        if dm.state.auto_switch_on_startup {
+            match device_manager::apply(&mut dm).await {
+                Ok(v) => info!("device manager startup apply: {v}"),
+                Err(e) => info!("device manager startup apply skipped: {e}"),
+            }
+        }
+    }
 
     run_server(state).await?;
     Ok(())

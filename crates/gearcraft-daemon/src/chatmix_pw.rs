@@ -207,8 +207,14 @@ pub async fn apply_volumes(game_pct: u8, chat_pct: u8) -> Result<AudioBackendInf
 
     match info.backend.as_str() {
         "wpctl" => {
-            let g = info.game_sink.as_deref().unwrap();
-            let c = info.chat_sink.as_deref().unwrap();
+            let g = info
+                .game_sink
+                .as_deref()
+                .ok_or_else(|| "game sink id missing".to_string())?;
+            let c = info
+                .chat_sink
+                .as_deref()
+                .ok_or_else(|| "chat sink id missing".to_string())?;
             // wpctl uses fraction 0.0–1.0+
             let gv = format!("{:.2}", game_pct as f32 / 100.0);
             let cv = format!("{:.2}", chat_pct as f32 / 100.0);
@@ -217,8 +223,14 @@ pub async fn apply_volumes(game_pct: u8, chat_pct: u8) -> Result<AudioBackendInf
             info!("wpctl volumes game={game_pct}% chat={chat_pct}%");
         }
         "pactl" => {
-            let g = info.game_sink.as_deref().unwrap();
-            let c = info.chat_sink.as_deref().unwrap();
+            let g = info
+                .game_sink
+                .as_deref()
+                .ok_or_else(|| "game sink name missing".to_string())?;
+            let c = info
+                .chat_sink
+                .as_deref()
+                .ok_or_else(|| "chat sink name missing".to_string())?;
             let gv = format!("{}%", game_pct);
             let cv = format!("{}%", chat_pct);
             run_out("pactl", &["set-sink-volume", g, &gv]).await?;

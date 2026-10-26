@@ -12,7 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gearcraft_core::{AudioPreset, ChatMixState, MacroDef, PresetRule};
+use gearcraft_core::{AudioPreset, ChatMixState, DeviceManagerState, MacroDef, PresetRule};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -179,4 +179,27 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     fs::write(&tmp, data.as_bytes()).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+
+pub fn device_manager_path() -> PathBuf {
+    config_dir().join("device_manager.json")
+}
+
+pub fn load_device_manager() -> Option<DeviceManagerState> {
+    let path = device_manager_path();
+    let data = fs::read_to_string(&path).ok()?;
+    match serde_json::from_str(&data) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            warn!("device_manager.json: {e}");
+            None
+        }
+    }
+}
+
+pub fn save_device_manager(state: &DeviceManagerState) -> Result<(), String> {
+    let path = device_manager_path();
+    let data = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    fs::write(&path, data).map_err(|e| e.to_string())
 }

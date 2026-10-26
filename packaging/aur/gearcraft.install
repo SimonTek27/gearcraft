@@ -1,0 +1,11 @@
+post_install() {
+  udevadm control --reload-rules
+  udevadm trigger
+  echo "Enable user daemon: systemctl --user enable --now gearcraft-daemon"
+  echo "Optional: openrazer-daemon, openrgb, piper (ratbagd), swh-plugins"
+}
+
+post_upgrade() {
+  udevadm control --reload-rules
+  udevadm trigger
+}

@@ -29,6 +29,34 @@ export struct PresetRow {
     auto: bool,
 }
 
+export struct OutputDeviceRow {
+    id: string,
+    label: string,
+    is-virtual: bool,
+    available: bool,
+}
+
+export struct EqBandRow {
+    index: int,
+    freq-label: string,
+    gain: float,
+}
+
+export struct CameraDeviceRow {
+    id: string,
+    label: string,
+    path: string,
+    available: bool,
+}
+
+export struct CameraEffectRow {
+    id: string,
+    name: string,
+    kind: string,
+    enabled: bool,
+    intensity: int,
+}
+
 // Sidebar navigation entry: icon (passed as @children) + label
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -65,17 +93,17 @@ component NavItem inherits Rectangle {
 }
 
 export component App inherits Window {
-
-
     title: "GearCraft";
     preferred-width: 1100px;
     preferred-height: 720px;
     min-width: 900px;
     min-height: 600px;
     background: #0f1013;
+    // Client-side decorations (no system frame)
+    no-frame: true;
 
     // ---- state (set from Rust) ----
-    in-out property <int> page: 0; // 0 Engine, 1 Sonar
+    in-out property <int> page: 0; // 0 Engine, 1 Sonar, 2 Prism, 3 Camera
     in-out property <string> status-text: "Connecting…";
     in-out property <bool> daemon-online: false;
     in-out property <[DeviceRow]> devices: [];
@@ -85,6 +113,15 @@ export component App inherits Window {
     in-out property <float> color-g: 0.906;
     in-out property <float> color-b: 0.627;
     in-out property <string> color-zone: "logo";
+    in-out property <string> prism-effect: "static";
+    // Screen capture (Spectacle GUI)
+    in-out property <string> capture-mode: "full";
+    in-out property <int> capture-delay: 0;
+    in-out property <bool> capture-clipboard: true;
+    in-out property <string> capture-last-path: "—";
+    in-out property <string> capture-status: "Pronto";
+    in-out property <int> mouse-dpi: 800;
+    in-out property <string> mouse-dpi-label: "DPI: —";
     in-out property <int> chatmix-balance: 0;
     in-out property <int> game-volume: 100;
     in-out property <int> chat-volume: 100;
@@ -96,6 +133,40 @@ export component App inherits Window {
     in-out property <string> active-preset-id: "";
     in-out property <string> active-preset-name: "—";
     in-out property <string> preset-name-input: "";
+    in-out property <[OutputDeviceRow]> output-devices: [];
+    in-out property <string> selected-output-id: "";
+    in-out property <string> selected-output-label: "—";
+    in-out property <bool> link-all-devices: true;
+    in-out property <string> ch-device-game: "—";
+    in-out property <string> ch-device-chat: "—";
+    in-out property <string> ch-device-media: "—";
+    in-out property <string> ch-device-aux: "—";
+    in-out property <string> backup-mode-label: "automatic";
+    in-out property <bool> spatial-enabled: true;
+    in-out property <int> spatial-immersion: 40;
+    in-out property <int> spatial-distance: 40;
+    in-out property <int> volume-boost: 0;
+    in-out property <bool> smart-volume: false;
+    in-out property <bool> eq-enabled: true;
+    in-out property <int> mic-gain: 100;
+    in-out property <bool> mic-muted: false;
+    in-out property <bool> mic-highpass: true;
+    in-out property <bool> mic-noise-gate: false;
+    in-out property <int> mic-gate-strength: 40;
+    in-out property <bool> mic-lowpass: false;
+    in-out property <bool> mic-compressor: false;
+    in-out property <[EqBandRow]> eq-bands: [
+        { index: 0, freq-label: "31", gain: 0 },
+        { index: 1, freq-label: "63", gain: 0 },
+        { index: 2, freq-label: "125", gain: 0 },
+        { index: 3, freq-label: "250", gain: 0 },
+        { index: 4, freq-label: "500", gain: 0 },
+        { index: 5, freq-label: "1k", gain: 0 },
+        { index: 6, freq-label: "2k", gain: 0 },
+        { index: 7, freq-label: "4k", gain: 0 },
+        { index: 8, freq-label: "8k", gain: 0 },
+        { index: 9, freq-label: "16k", gain: 0 },
+    ];
     in-out property <[ChannelRow]> channels: [
         { id: "master", label: "MASTER", color: #8b8d91, volume: 100, muted: false, solo: false, device: "System" },
         { id: "game", label: "GAME", color: #00e7a0, volume: 100, muted: false, solo: false, device: "GearCraft_Game" },
@@ -105,10 +176,54 @@ export component App inherits Window {
         { id: "mic", label: "MIC", color: #f5a524, volume: 100, muted: false, solo: false, device: "Input" },
     ];
 
+    // Camera (under Sonar)
+    in-out property <[CameraDeviceRow]> camera-devices: [];
+    in-out property <string> camera-device-id: "";
+    in-out property <string> camera-device-label: "Nessuna camera";
+    in-out property <bool> camera-preview-active: false;
+    in-out property <image> camera-frame;
+    in-out property <string> camera-preview-status: "Preview spenta";
+    in-out property <string> camera-mode: "video"; // video | photo
+    // Video capture
+    in-out property <string> cam-video-resolution: "1280x720";
+    in-out property <int> cam-video-fps: 30;
+    in-out property <string> cam-video-format: "MJPG";
+    in-out property <int> cam-video-bitrate: 8; // Mbps
+    in-out property <bool> cam-video-recording: false;
+    // Photo
+    in-out property <string> cam-photo-resolution: "1920x1080";
+    in-out property <string> cam-photo-format: "JPEG";
+    in-out property <int> cam-photo-quality: 90;
+    in-out property <int> cam-photo-timer: 0; // seconds
+    // Image controls
+    in-out property <int> cam-brightness: 50;
+    in-out property <int> cam-contrast: 50;
+    in-out property <int> cam-saturation: 50;
+    in-out property <int> cam-sharpness: 50;
+    in-out property <int> cam-exposure: 50;
+    in-out property <bool> cam-auto-exposure: true;
+    in-out property <bool> cam-auto-wb: true;
+    in-out property <int> cam-wb-temp: 4500;
+    // Effects
+    in-out property <[CameraEffectRow]> camera-effects: [];
+    in-out property <string> camera-effect-name-input: "";
+
     // ---- callbacks → Rust ----
+
     callback refresh-devices();
     callback select-device(string);
     callback apply-color();
+    callback take-screenshot(string);
+    callback start-capture();
+    callback set-capture-mode(string);
+    callback set-capture-delay(int);
+    callback toggle-capture-clipboard();
+    callback open-prism(string);
+    callback apply-prism();
+    callback prism-sync-all();
+    callback set-device-dpi(int);
+    callback refresh-mouse-info();
+    callback set-prism-effect(string);
     callback set-chatmix(int);
     callback setup-chatmix();
     callback channel-volume(string, int);
@@ -120,11 +235,230 @@ export component App inherits Window {
     callback load-preset(string);
     callback save-preset(string);
     callback delete-preset(string);
+    callback refresh-device-manager();
+    callback select-output-device(string);
+    callback assign-channel-device(string);
+    callback link-all-outputs();
+    callback apply-device-manager();
+    callback apply-spatial();
+    callback set-spatial-immersion(int);
+    callback set-spatial-distance(int);
+    callback set-volume-boost(int);
+    callback toggle-smart-volume();
+    callback toggle-spatial();
+    callback toggle-eq();
+    callback eq-band-gain(int, float);
+    callback reset-eq();
+    callback apply-eq();
+    callback reset-spatial();
+    callback reset-all-fx();
+    callback set-mic-gain(int);
+    callback toggle-mic-mute();
+    callback toggle-mic-highpass();
+    callback toggle-mic-gate();
+    callback apply-mic-fx();
+    callback refresh-mic-fx();
+    callback refresh-cameras();
+    callback select-camera(string);
+    callback toggle-camera-preview();
+    callback set-camera-mode(string);
+    callback set-cam-video-resolution(string);
+    callback set-cam-video-fps(int);
+    callback set-cam-video-format(string);
+    callback set-cam-video-bitrate(int);
+    callback toggle-cam-recording();
+    callback set-cam-photo-resolution(string);
+    callback set-cam-photo-format(string);
+    callback set-cam-photo-quality(int);
+    callback set-cam-photo-timer(int);
+    callback capture-photo();
+    callback set-cam-brightness(int);
+    callback set-cam-contrast(int);
+    callback set-cam-saturation(int);
+    callback set-cam-sharpness(int);
+    callback set-cam-exposure(int);
+    callback toggle-cam-auto-exposure();
+    callback toggle-cam-auto-wb();
+    callback set-cam-wb-temp(int);
+    callback toggle-camera-effect(string);
+    callback set-camera-effect-intensity(string, int);
+    callback add-camera-effect(string);
+    callback remove-camera-effect(string);
+    callback apply-camera-settings();
+
+    callback toggle-mic-lowpass();
+    callback toggle-mic-compressor();
     callback toggle-preset-rule(string);
 
-    HorizontalBox {
+    // Custom window chrome
+    in-out property <bool> win-maximized: false;
+    in-out property <bool> show-settings: false;
+    in-out property <bool> show-help: false;
+    callback win-minimize();
+    callback win-maximize();
+    callback win-close();
+    callback open-settings();
+    callback open-help();
+
+    Rectangle {
+        // Root chrome container (CSD + content + overlays)
+
+        VerticalBox {
         padding: 0;
         spacing: 0;
+        x: 0; y: 0;
+        width: 100%;
+        height: 100%;
+
+        // ---- Custom title bar (themed CSD) ----
+        Rectangle {
+            height: 40px;
+            background: #0a0b0d;
+            border-width: 0px;
+
+            HorizontalBox {
+                padding-left: 12px;
+                padding-right: 6px;
+                spacing: 8px;
+                alignment: stretch;
+
+                // App mark + title (drag region)
+                HorizontalBox {
+                    spacing: 8px;
+                    horizontal-stretch: 1;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        y: 6px;
+                        border-radius: 3px;
+                        background: #00e7a0;
+                    }
+                    Text {
+                        text: "GearCraft";
+                        color: #e6e7e9;
+                        font-size: 13px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.status-text;
+                        color: root.daemon-online ? #00e7a0 : #5a5b5f;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                // Settings + Help
+                Rectangle {
+                    width: 32px;
+                    height: 28px;
+                    y: 2px;
+                    border-radius: 6px;
+                    background: root.show-settings ? #12332c : transparent;
+                    border-width: 1px;
+                    border-color: root.show-settings ? #00e7a0 : transparent;
+
+                    Text {
+                        text: "⚙";
+                        color: root.show-settings ? #00e7a0 : #8b8d91;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%; height: 100%;
+                    }
+                    TouchArea {
+                        clicked => { root.open-settings(); }
+                    }
+                }
+                Rectangle {
+                    width: 32px;
+                    height: 28px;
+                    y: 2px;
+                    border-radius: 6px;
+                    background: root.show-help ? #12332c : transparent;
+                    border-width: 1px;
+                    border-color: root.show-help ? #00e7a0 : transparent;
+
+                    Text {
+                        text: "?";
+                        color: root.show-help ? #00e7a0 : #8b8d91;
+                        font-size: 14px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%; height: 100%;
+                    }
+                    TouchArea {
+                        clicked => { root.open-help(); }
+                    }
+                }
+
+                // Window controls
+                Rectangle {
+                    width: 36px;
+                    height: 28px;
+                    y: 2px;
+                    border-radius: 6px;
+                    background: transparent;
+                    Text {
+                        text: "—";
+                        color: #8b8d91;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%; height: 100%;
+                    }
+                    TouchArea {
+                        clicked => { root.win-minimize(); }
+                    }
+                }
+                Rectangle {
+                    width: 36px;
+                    height: 28px;
+                    y: 2px;
+                    border-radius: 6px;
+                    background: transparent;
+                    Text {
+                        text: root.win-maximized ? "❐" : "□";
+                        color: #8b8d91;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%; height: 100%;
+                    }
+                    TouchArea {
+                        clicked => { root.win-maximize(); }
+                    }
+                }
+                Rectangle {
+                    width: 36px;
+                    height: 28px;
+                    y: 2px;
+                    border-radius: 6px;
+                    background: transparent;
+                    Text {
+                        text: "✕";
+                        color: #8b8d91;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%; height: 100%;
+                    }
+                    TouchArea {
+                        clicked => { root.win-close(); }
+                    }
+                }
+            }
+        }
+
+        HorizontalBox {
+            padding: 0;
+            spacing: 0;
+            vertical-stretch: 1;
 
         // Sidebar
         Rectangle {
@@ -193,6 +527,57 @@ export component App inherits Window {
                         commands: "M 2 14 H 7 V 21 H 2 Z M 17 14 H 22 V 21 H 17 Z";
                     }
                 }
+
+                NavItem {
+                    label: "Camera";
+                    active: root.page == 3;
+                    clicked => { root.page = 3; root.refresh-cameras(); }
+
+                    // Camera icon
+                    Path {
+                        width: 18px;
+                        height: 18px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        fill: transparent;
+                        stroke: root.page == 3 ? #00e7a0 : #8b8d91;
+                        stroke-width: 2px;
+                        commands: "M 4 7 H 15 V 17 H 4 Z M 15 10 L 20 7 V 17 L 15 14 Z";
+                    }
+                }
+
+                NavItem {
+                    label: "Prism";
+                    active: root.page == 2;
+                    clicked => { root.page = 2; }
+
+                    Path {
+                        width: 18px;
+                        height: 18px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        fill: root.page == 2 ? #00e7a0 : #8b8d91;
+                        stroke-width: 0px;
+                        commands: "M 12 2 L 22 8 L 22 16 L 12 22 L 2 16 L 2 8 Z";
+                    }
+                }
+                NavItem {
+                    label: "Schermo";
+                    active: root.page == 4;
+                    clicked => { root.page = 4; }
+
+                    Path {
+                        width: 18px;
+                        height: 18px;
+                        viewbox-width: 24;
+                        viewbox-height: 24;
+                        fill: transparent;
+                        stroke: root.page == 4 ? #00e7a0 : #8b8d91;
+                        stroke-width: 2px;
+                        commands: "M 3 5 H 21 V 16 H 3 Z M 8 19 H 16 M 12 16 V 19";
+                    }
+                }
+
             }
         }
 
@@ -263,7 +648,7 @@ export component App inherits Window {
                         border-color: dev.id == root.selected-device-id ? #00e7a0 : #2a2b2f;
 
                         TouchArea {
-                            clicked => { root.select-device(dev.id); }
+                            clicked => { root.select-device(dev.id); root.open-prism(dev.id); }
                             HorizontalBox {
                                 padding: 10px;
                                 spacing: 8px;
@@ -362,6 +747,84 @@ export component App inherits Window {
                         }
                     }
                 }
+
+
+                Rectangle {
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 12px;
+                        spacing: 8px;
+                        HorizontalBox {
+                            Text {
+                                text: "DPI MOUSE · libratbag";
+                                color: #8b8d91;
+                                font-size: 11px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "  " + root.mouse-dpi-label;
+                                color: #00e7a0;
+                                font-size: 11px;
+                            }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: "Aggiorna";
+                                clicked => { root.refresh-mouse-info(); }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button { text: "400"; clicked => { root.set-device-dpi(400); } }
+                            Button { text: "800"; clicked => { root.set-device-dpi(800); } }
+                            Button { text: "1600"; clicked => { root.set-device-dpi(1600); } }
+                            Button { text: "3200"; clicked => { root.set-device-dpi(3200); } }
+                            Button { text: "6400"; clicked => { root.set-device-dpi(6400); } }
+                        }
+                    }
+                }
+
+                // Screen capture (Spectacle-style)
+                Rectangle {
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text {
+                            text: "CATTURA SCHERMO · Spectacle";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: "Schermo intero";
+                                primary: true;
+                                clicked => { root.take-screenshot("full"); }
+                            }
+                            Button {
+                                text: "Finestra attiva";
+                                clicked => { root.take-screenshot("window"); }
+                            }
+                            Button {
+                                text: "Regione";
+                                clicked => { root.take-screenshot("region"); }
+                            }
+                        }
+                        Text {
+                            text: "Salva in ~/Pictures/GearCraft · clipboard se disponibile";
+                            color: #5a5b5f;
+                            font-size: 10px;
+                        }
+                    }
+                }
+
             }
 
             // SONAR — mixer always visible; streamer mode adds dual path above the fader
@@ -797,7 +1260,319 @@ export component App inherits Window {
                     }
                 }
 
-                // ChatMix bar (always)
+                                // Device Manager (physical outputs per channel)
+                Rectangle {
+                    height: 168px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "DEVICE MANAGER"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                            Text {
+                                text: "  backup: " + root.backup-mode-label;
+                                color: #5a5b5f; font-size: 11px;
+                            }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.link-all-devices ? "Link: ON" : "Link: OFF";
+                                primary: root.link-all-devices;
+                                clicked => { root.link-all-outputs(); }
+                            }
+                            Button { text: "Aggiorna"; clicked => { root.refresh-device-manager(); } }
+                            Button { text: "Applica"; primary: true; clicked => { root.apply-device-manager(); } }
+                        }
+                        HorizontalBox {
+                            spacing: 12px;
+                            Text { text: "Game → " + root.ch-device-game; color: #00e7a0; font-size: 11px; }
+                            Text { text: "Chat → " + root.ch-device-chat; color: #3b9eff; font-size: 11px; }
+                            Text { text: "Media → " + root.ch-device-media; color: #e84d8a; font-size: 11px; }
+                            Text { text: "Aux → " + root.ch-device-aux; color: #a78bfa; font-size: 11px; }
+                        }
+                        Text {
+                            text: "Selezionato: " + root.selected-output-label;
+                            color: #ffffff; font-size: 11px;
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            ScrollView {
+                                horizontal-stretch: 1;
+                                VerticalBox {
+                                    spacing: 3px;
+                                    for d in root.output-devices: Rectangle {
+                                        height: 28px;
+                                        border-radius: 6px;
+                                        background: d.id == root.selected-output-id ? #24332c : #121316;
+                                        TouchArea {
+                                            clicked => { root.select-output-device(d.id); }
+                                            HorizontalBox {
+                                                padding: 6px;
+                                                spacing: 8px;
+                                                Text {
+                                                    text: d.label + (d.is-virtual ? "  · virtual" : "");
+                                                    color: d.available ? #ffffff : #5a5b5f;
+                                                    font-size: 11px;
+                                                    vertical-alignment: center;
+                                                    horizontal-stretch: 1;
+                                                    overflow: elide;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalBox {
+                                width: 110px;
+                                spacing: 4px;
+                                Button { text: "→ Game"; clicked => { root.assign-channel-device("game"); } }
+                                Button { text: "→ Chat"; clicked => { root.assign-channel-device("chat"); } }
+                                Button { text: "→ Media"; clicked => { root.assign-channel-device("media"); } }
+                                Button { text: "→ Aux"; clicked => { root.assign-channel-device("aux"); } }
+                            }
+                        }
+                    }
+                }
+
+                // Interactive 10-band EQ
+                Rectangle {
+                    height: 200px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "EQUALIZER"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                            Text {
+                                text: "  −12 dB  ·  +12 dB";
+                                color: #5a5b5f; font-size: 10px;
+                            }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.eq-enabled ? "EQ: ON" : "EQ: OFF";
+                                primary: root.eq-enabled;
+                                clicked => { root.toggle-eq(); }
+                            }
+                            Button { text: "Reset EQ"; clicked => { root.reset-eq(); } }
+                            Button { text: "Applica EQ"; primary: true; clicked => { root.apply-eq(); } }
+                        }
+                        // Graph + faders
+                        HorizontalBox {
+                            spacing: 4px;
+                            vertical-stretch: 1;
+                            for band in root.eq-bands: VerticalBox {
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                // Gain readout
+                                Text {
+                                    text: band.gain;
+                                    color: band.gain == 0 ? #5a5b5f : #00e7a0;
+                                    font-size: 9px;
+                                    font-family: "monospace";
+                                    horizontal-alignment: center;
+                                }
+                                // Vertical fader track
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    vertical-stretch: 1;
+                                    min-height: 110px;
+                                    border-radius: 6px;
+                                    background: #121316;
+                                    // zero line
+                                    Rectangle {
+                                        y: parent.height / 2 - 0.5px;
+                                        height: 1px;
+                                        width: 100%;
+                                        background: #2a2b2f;
+                                    }
+                                    // fill from center toward gain
+                                    Rectangle {
+                                        width: 8px;
+                                        x: (parent.width - 8px) / 2;
+                                        height: Math.abs(band.gain) / 12 * (parent.height / 2);
+                                        y: band.gain >= 0
+                                            ? parent.height / 2 - self.height
+                                            : parent.height / 2;
+                                        border-radius: 3px;
+                                        background: root.eq-enabled ? #00e7a0 : #3a3b3f;
+                                    }
+                                    // draggable thumb
+                                    Rectangle {
+                                        width: 14px;
+                                        height: 8px;
+                                        x: (parent.width - 14px) / 2;
+                                        y: parent.height / 2 - (band.gain / 12) * (parent.height / 2) - 4px;
+                                        border-radius: 3px;
+                                        background: #ffffff;
+                                    }
+                                    TouchArea {
+                                        moved => {
+                                            if (self.pressed) {
+                                                // top = +12, bottom = -12
+                                                root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
+                                            }
+                                        }
+                                        clicked => {
+                                            root.eq-band-gain(band.index, Math.max(-12, Math.min(12, (0.5 - self.mouse-y / self.height) * 24)));
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: band.freq-label;
+                                    color: #8b8d91;
+                                    font-size: 9px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Spatial + volume (Sonar Game/Chat FX)
+                Rectangle {
+                    height: 110px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "SPATIAL / BOOST"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.spatial-enabled ? "Spatial: ON" : "Spatial: OFF";
+                                primary: root.spatial-enabled;
+                                clicked => { root.toggle-spatial(); }
+                            }
+                            Button {
+                                text: root.smart-volume ? "Smart Vol: ON" : "Smart Vol: OFF";
+                                primary: root.smart-volume;
+                                clicked => { root.toggle-smart-volume(); }
+                            }
+                            Button {
+                                text: "Reset FX";
+                                clicked => { root.reset-all-fx(); }
+                            }
+                            Button {
+                                text: "Applica FX";
+                                primary: true;
+                                clicked => { root.apply-spatial(); }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Perf"; color: #3b9eff; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 100;
+                                value: root.spatial-immersion;
+                                changed(v) => { root.set-spatial-immersion(v); }
+                            }
+                            Text { text: "Immers"; color: #e84d8a; font-size: 10px; vertical-alignment: center; }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Near"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 100;
+                                value: root.spatial-distance;
+                                changed(v) => { root.set-spatial-distance(v); }
+                            }
+                            Text { text: "Far"; color: #8b8d91; font-size: 10px; vertical-alignment: center; }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Boost dB"; color: #f5a524; font-size: 10px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: -6;
+                                maximum: 12;
+                                value: root.volume-boost;
+                                changed(v) => { root.set-volume-boost(v); }
+                            }
+                            Text {
+                                text: root.volume-boost;
+                                color: #ffffff;
+                                font-size: 11px;
+                                font-family: "monospace";
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // Microphone FX
+                Rectangle {
+                    height: 108px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            Text { text: "MICROPHONE"; color: #f5a524; font-size: 11px; font-weight: 700; }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: root.mic-muted ? "Unmute" : "Mute";
+                                clicked => { root.toggle-mic-mute(); }
+                            }
+                            Button {
+                                text: root.mic-highpass ? "HPF: ON" : "HPF: OFF";
+                                primary: root.mic-highpass;
+                                clicked => { root.toggle-mic-highpass(); }
+                            }
+                            Button {
+                                text: root.mic-noise-gate ? "Gate: ON" : "Gate: OFF";
+                                primary: root.mic-noise-gate;
+                                clicked => { root.toggle-mic-gate(); }
+                            }
+                            Button {
+                                text: root.mic-lowpass ? "LPF: ON" : "LPF: OFF";
+                                primary: root.mic-lowpass;
+                                clicked => { root.toggle-mic-lowpass(); }
+                            }
+                            Button {
+                                text: root.mic-compressor ? "Comp: ON" : "Comp: OFF";
+                                primary: root.mic-compressor;
+                                clicked => { root.toggle-mic-compressor(); }
+                            }
+                            Button { text: "Aggiorna"; clicked => { root.refresh-mic-fx(); } }
+                            Button { text: "Applica Mic"; primary: true; clicked => { root.apply-mic-fx(); } }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Gain"; color: #8b8d91; font-size: 11px; vertical-alignment: center; }
+                            Slider {
+                                horizontal-stretch: 1;
+                                minimum: 0;
+                                maximum: 150;
+                                value: root.mic-gain;
+                                changed(v) => { root.set-mic-gain(v); }
+                            }
+                            Text {
+                                text: root.mic-gain + "%";
+                                color: #ffffff;
+                                font-size: 11px;
+                                font-family: "monospace";
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+// ChatMix bar (always)
                 Rectangle {
                     height: 72px;
                     border-radius: 12px;
@@ -853,6 +1628,936 @@ export component App inherits Window {
                                 color: #8b8d91;
                                 font-size: 10px;
                             }
+                        }
+                    }
+                }
+            }
+
+
+            // PRISM — RGB illumination (per device)
+            if root.page == 2: VerticalBox {
+                padding: 24px;
+                spacing: 16px;
+
+                HorizontalBox {
+                    Button {
+                        text: "← Engine";
+                        clicked => { root.page = 0; }
+                    }
+                    Text {
+                        text: "Prism";
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "  ·  " + root.selected-device-name;
+                        color: #8b8d91;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    Button {
+                        text: "Sync tutti";
+                        clicked => { root.prism-sync-all(); }
+                    }
+                    Button {
+                        text: "Applica";
+                        primary: true;
+                        clicked => { root.apply-prism(); }
+                    }
+                }
+
+                Text {
+                    text: "Illumination · effetti e colori sul device selezionato";
+                    color: #8b8d91;
+                    font-size: 12px;
+                }
+
+                HorizontalBox {
+                    spacing: 24px;
+
+                    Rectangle {
+                        width: 140px;
+                        height: 140px;
+                        border-radius: 16px;
+                        border-width: 1px;
+                        border-color: #2a2b2f;
+                        background: rgb(
+                            root.color-r * 255,
+                            root.color-g * 255,
+                            root.color-b * 255
+                        );
+                    }
+
+                    VerticalBox {
+                        spacing: 10px;
+                        horizontal-stretch: 1;
+
+                        Text { text: "EFFETTO"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: "Static";
+                                primary: root.prism-effect == "static";
+                                clicked => { root.set-prism-effect("static"); }
+                            }
+                            Button {
+                                text: "Rainbow";
+                                primary: root.prism-effect == "rainbow";
+                                clicked => { root.set-prism-effect("rainbow"); }
+                            }
+                            Button {
+                                text: "Breathe";
+                                primary: root.prism-effect == "breathe";
+                                clicked => { root.set-prism-effect("breathe"); }
+                            }
+                            Button {
+                                text: "Spectrum";
+                                primary: root.prism-effect == "spectrum";
+                                clicked => { root.set-prism-effect("spectrum"); }
+                            }
+                            Button {
+                                text: "Wave";
+                                primary: root.prism-effect == "wave";
+                                clicked => { root.set-prism-effect("wave"); }
+                            }
+                            Button {
+                                text: "Off";
+                                primary: root.prism-effect == "off";
+                                clicked => { root.set-prism-effect("off"); }
+                            }
+                        }
+
+                        Text { text: "ZONA"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: "Logo";
+                                primary: root.color-zone == "logo";
+                                clicked => { root.color-zone = "logo"; }
+                            }
+                            Button {
+                                text: "Scroll";
+                                primary: root.color-zone == "scroll";
+                                clicked => { root.color-zone = "scroll"; }
+                            }
+                            Button {
+                                text: "All";
+                                primary: root.color-zone == "all";
+                                clicked => { root.color-zone = "all"; }
+                            }
+                            Button {
+                                text: "Backlight";
+                                primary: root.color-zone == "backlight";
+                                clicked => { root.color-zone = "backlight"; }
+                            }
+                        }
+
+                        Text { text: "COLORE"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+                        HorizontalBox {
+                            spacing: 12px;
+                            VerticalBox {
+                                spacing: 4px;
+                                Text { text: "R"; color: #e84d8a; font-size: 10px; }
+                                Slider {
+                                    minimum: 0; maximum: 1;
+                                    value: root.color-r;
+                                    changed(v) => { root.color-r = v; }
+                                }
+                            }
+                            VerticalBox {
+                                spacing: 4px;
+                                Text { text: "G"; color: #00e7a0; font-size: 10px; }
+                                Slider {
+                                    minimum: 0; maximum: 1;
+                                    value: root.color-g;
+                                    changed(v) => { root.color-g = v; }
+                                }
+                            }
+                            VerticalBox {
+                                spacing: 4px;
+                                Text { text: "B"; color: #3b9eff; font-size: 10px; }
+                                Slider {
+                                    minimum: 0; maximum: 1;
+                                    value: root.color-b;
+                                    changed(v) => { root.color-b = v; }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: "Verde GearCraft";
+                                clicked => {
+                                    root.color-r = 0;
+                                    root.color-g = 0.906;
+                                    root.color-b = 0.627;
+                                    root.prism-effect = "static";
+                                }
+                            }
+                            Button {
+                                text: "Bianco";
+                                clicked => {
+                                    root.color-r = 1;
+                                    root.color-g = 1;
+                                    root.color-b = 1;
+                                    root.prism-effect = "static";
+                                }
+                            }
+                            Button {
+                                text: "Rosso";
+                                clicked => {
+                                    root.color-r = 1;
+                                    root.color-g = 0.1;
+                                    root.color-b = 0.1;
+                                    root.prism-effect = "static";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            // CAMERA — preview, capture settings, custom effects (under Sonar)
+            if root.page == 3: VerticalBox {
+                padding: 16px;
+                spacing: 12px;
+
+                HorizontalBox {
+                    spacing: 10px;
+                    Text {
+                        text: "Camera";
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "· sotto Sonar · cattura video / foto · effetti";
+                        color: #8b8d91;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    Button {
+                        text: "Aggiorna device";
+                        clicked => { root.refresh-cameras(); }
+                    }
+                    Button {
+                        text: "Applica settaggi";
+                        primary: true;
+                        clicked => { root.apply-camera-settings(); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 12px;
+                    vertical-stretch: 1;
+
+                    // Left: preview + device
+                    VerticalBox {
+                        spacing: 10px;
+                        width: 420px;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            min-height: 260px;
+                            border-radius: 12px;
+                            border-width: 1px;
+                            border-color: root.camera-preview-active ? #00e7a0 : #2a2b2f;
+                            background: #0a0b0d;
+                            clip: true;
+
+                            // Live frames
+                            Image {
+                                x: 0; y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                                source: root.camera-frame;
+                                source-clip-x: 0;
+                                source-clip-y: 0;
+                                image-fit: contain;
+                                opacity: root.camera-preview-active ? 1.0 : 0.35;
+                            }
+
+                            // Overlay status
+                            Rectangle {
+                                x: 0; y: 0;
+                                width: parent.width;
+                                height: 56px;
+                                background: #000000aa;
+
+                                VerticalBox {
+                                    padding: 8px;
+                                    spacing: 2px;
+                                    Text {
+                                        text: root.camera-preview-active ? "● LIVE" : "○ STANDBY";
+                                        color: root.camera-preview-active ? #00e7a0 : #8b8d91;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    }
+                                    Text {
+                                        text: root.camera-device-label + "  ·  " + root.camera-preview-status;
+                                        color: #c8c9cc;
+                                        font-size: 10px;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: root.cam-video-resolution + " @ " + root.cam-video-fps + " fps · " + root.cam-video-format;
+                                        color: #8b8d91;
+                                        font-size: 9px;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button {
+                                text: root.camera-preview-active ? "Stop preview" : "Avvia preview";
+                                primary: !root.camera-preview-active;
+                                clicked => { root.toggle-camera-preview(); }
+                            }
+                            Button {
+                                text: root.cam-video-recording ? "■ Stop REC" : "● Rec video";
+                                clicked => { root.toggle-cam-recording(); }
+                            }
+                            Button {
+                                text: "Scatta foto";
+                                primary: true;
+                                clicked => { root.capture-photo(); }
+                            }
+                        }
+
+                        Text { text: "DISPOSITIVO"; color: #8b8d91; font-size: 10px; font-weight: 700; }
+                        ScrollView {
+                            height: 100px;
+                            VerticalBox {
+                                spacing: 4px;
+                                for cam in root.camera-devices: Rectangle {
+                                    height: 32px;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: cam.id == root.camera-device-id ? #00e7a0 : #2a2b2f;
+                                    background: #1a1b1e;
+                                    TouchArea {
+                                        clicked => { root.select-camera(cam.id); }
+                                        HorizontalBox {
+                                            padding: 6px;
+                                            spacing: 8px;
+                                            Rectangle {
+                                                width: 6px; height: 6px; y: 6px;
+                                                border-radius: 3px;
+                                                background: cam.available ? #00e7a0 : #5a5b5f;
+                                            }
+                                            Text {
+                                                text: cam.label;
+                                                color: #e6e7e9;
+                                                font-size: 11px;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                                if root.camera-devices.length == 0: Text {
+                                    text: "Nessuna /dev/video* trovata";
+                                    color: #8b8d91;
+                                    font-size: 11px;
+                                }
+                            }
+                        }
+                    }
+
+                    // Right: settings tabs-ish + effects
+                    VerticalBox {
+                        spacing: 10px;
+                        horizontal-stretch: 1;
+
+                        HorizontalBox {
+                            spacing: 6px;
+                            Button {
+                                text: "Video";
+                                primary: root.camera-mode == "video";
+                                clicked => { root.set-camera-mode("video"); }
+                            }
+                            Button {
+                                text: "Foto";
+                                primary: root.camera-mode == "photo";
+                                clicked => { root.set-camera-mode("photo"); }
+                            }
+                            Button {
+                                text: "Immagine";
+                                primary: root.camera-mode == "image";
+                                clicked => { root.set-camera-mode("image"); }
+                            }
+                            Button {
+                                text: "Effetti";
+                                primary: root.camera-mode == "effects";
+                                clicked => { root.set-camera-mode("effects"); }
+                            }
+                        }
+
+                        // VIDEO settings
+                        if root.camera-mode == "video": VerticalBox {
+                            spacing: 8px;
+                            Text { text: "CATTURA VIDEO"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+
+                            Text { text: "Risoluzione"; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "640x480"; primary: root.cam-video-resolution == "640x480"; clicked => { root.set-cam-video-resolution("640x480"); } }
+                                Button { text: "1280x720"; primary: root.cam-video-resolution == "1280x720"; clicked => { root.set-cam-video-resolution("1280x720"); } }
+                                Button { text: "1920x1080"; primary: root.cam-video-resolution == "1920x1080"; clicked => { root.set-cam-video-resolution("1920x1080"); } }
+                                Button { text: "3840x2160"; primary: root.cam-video-resolution == "3840x2160"; clicked => { root.set-cam-video-resolution("3840x2160"); } }
+                            }
+
+                            Text { text: "FPS: " + root.cam-video-fps; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "24"; primary: root.cam-video-fps == 24; clicked => { root.set-cam-video-fps(24); } }
+                                Button { text: "30"; primary: root.cam-video-fps == 30; clicked => { root.set-cam-video-fps(30); } }
+                                Button { text: "60"; primary: root.cam-video-fps == 60; clicked => { root.set-cam-video-fps(60); } }
+                                Button { text: "120"; primary: root.cam-video-fps == 120; clicked => { root.set-cam-video-fps(120); } }
+                            }
+
+                            Text { text: "Formato"; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "MJPG"; primary: root.cam-video-format == "MJPG"; clicked => { root.set-cam-video-format("MJPG"); } }
+                                Button { text: "YUYV"; primary: root.cam-video-format == "YUYV"; clicked => { root.set-cam-video-format("YUYV"); } }
+                                Button { text: "H264"; primary: root.cam-video-format == "H264"; clicked => { root.set-cam-video-format("H264"); } }
+                                Button { text: "NV12"; primary: root.cam-video-format == "NV12"; clicked => { root.set-cam-video-format("NV12"); } }
+                            }
+
+                            Text { text: "Bitrate: " + root.cam-video-bitrate + " Mbps"; color: #8b8d91; font-size: 10px; }
+                            Slider {
+                                minimum: 1; maximum: 50; value: root.cam-video-bitrate;
+                                changed(v) => { root.set-cam-video-bitrate(v); }
+                            }
+                        }
+
+                        // PHOTO settings
+                        if root.camera-mode == "photo": VerticalBox {
+                            spacing: 8px;
+                            Text { text: "CATTURA FOTO"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+
+                            Text { text: "Risoluzione"; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "1280x720"; primary: root.cam-photo-resolution == "1280x720"; clicked => { root.set-cam-photo-resolution("1280x720"); } }
+                                Button { text: "1920x1080"; primary: root.cam-photo-resolution == "1920x1080"; clicked => { root.set-cam-photo-resolution("1920x1080"); } }
+                                Button { text: "3840x2160"; primary: root.cam-photo-resolution == "3840x2160"; clicked => { root.set-cam-photo-resolution("3840x2160"); } }
+                                Button { text: "Max sensor"; primary: root.cam-photo-resolution == "max"; clicked => { root.set-cam-photo-resolution("max"); } }
+                            }
+
+                            Text { text: "Formato"; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "JPEG"; primary: root.cam-photo-format == "JPEG"; clicked => { root.set-cam-photo-format("JPEG"); } }
+                                Button { text: "PNG"; primary: root.cam-photo-format == "PNG"; clicked => { root.set-cam-photo-format("PNG"); } }
+                                Button { text: "RAW"; primary: root.cam-photo-format == "RAW"; clicked => { root.set-cam-photo-format("RAW"); } }
+                            }
+
+                            Text { text: "Qualità JPEG: " + root.cam-photo-quality + "%"; color: #8b8d91; font-size: 10px; }
+                            Slider {
+                                minimum: 10; maximum: 100; value: root.cam-photo-quality;
+                                changed(v) => { root.set-cam-photo-quality(v); }
+                            }
+
+                            Text { text: "Timer (s): " + root.cam-photo-timer; color: #8b8d91; font-size: 10px; }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "0"; primary: root.cam-photo-timer == 0; clicked => { root.set-cam-photo-timer(0); } }
+                                Button { text: "3"; primary: root.cam-photo-timer == 3; clicked => { root.set-cam-photo-timer(3); } }
+                                Button { text: "5"; primary: root.cam-photo-timer == 5; clicked => { root.set-cam-photo-timer(5); } }
+                                Button { text: "10"; primary: root.cam-photo-timer == 10; clicked => { root.set-cam-photo-timer(10); } }
+                            }
+                        }
+
+                        // IMAGE controls
+                        if root.camera-mode == "image": VerticalBox {
+                            spacing: 6px;
+                            Text { text: "CONTROLLI IMMAGINE"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+
+                            Text { text: "Luminosità " + root.cam-brightness; color: #8b8d91; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 100; value: root.cam-brightness; changed(v) => { root.set-cam-brightness(v); } }
+                            Text { text: "Contrasto " + root.cam-contrast; color: #8b8d91; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 100; value: root.cam-contrast; changed(v) => { root.set-cam-contrast(v); } }
+                            Text { text: "Saturazione " + root.cam-saturation; color: #8b8d91; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 100; value: root.cam-saturation; changed(v) => { root.set-cam-saturation(v); } }
+                            Text { text: "Nitidezza " + root.cam-sharpness; color: #8b8d91; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 100; value: root.cam-sharpness; changed(v) => { root.set-cam-sharpness(v); } }
+                            Text { text: "Esposizione " + root.cam-exposure; color: #8b8d91; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 100; value: root.cam-exposure; enabled: !root.cam-auto-exposure; changed(v) => { root.set-cam-exposure(v); } }
+
+                            HorizontalBox {
+                                spacing: 8px;
+                                Button {
+                                    text: root.cam-auto-exposure ? "Auto exp: ON" : "Auto exp: OFF";
+                                    primary: root.cam-auto-exposure;
+                                    clicked => { root.toggle-cam-auto-exposure(); }
+                                }
+                                Button {
+                                    text: root.cam-auto-wb ? "Auto WB: ON" : "Auto WB: OFF";
+                                    primary: root.cam-auto-wb;
+                                    clicked => { root.toggle-cam-auto-wb(); }
+                                }
+                            }
+                            Text { text: "WB temp " + root.cam-wb-temp + " K"; color: #8b8d91; font-size: 10px; }
+                            Slider {
+                                minimum: 2500; maximum: 8000; value: root.cam-wb-temp;
+                                enabled: !root.cam-auto-wb;
+                                changed(v) => { root.set-cam-wb-temp(v); }
+                            }
+                        }
+
+                        // EFFECTS
+                        if root.camera-mode == "effects": VerticalBox {
+                            spacing: 8px;
+                            vertical-stretch: 1;
+                            Text { text: "EFFETTI VIDEO PERSONALIZZATI"; color: #8b8d91; font-size: 11px; font-weight: 700; }
+
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button { text: "+ Blur"; clicked => { root.add-camera-effect("blur"); } }
+                                Button { text: "+ Color grade"; clicked => { root.add-camera-effect("color_grade"); } }
+                                Button { text: "+ Vignette"; clicked => { root.add-camera-effect("vignette"); } }
+                                Button { text: "+ Mirror"; clicked => { root.add-camera-effect("mirror"); } }
+                                Button { text: "+ Overlay"; clicked => { root.add-camera-effect("overlay"); } }
+                                Button { text: "+ Sharpen"; clicked => { root.add-camera-effect("sharpen"); } }
+                            }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+                                VerticalBox {
+                                    spacing: 6px;
+                                    for fx in root.camera-effects: Rectangle {
+                                        height: 64px;
+                                        border-radius: 8px;
+                                        border-width: 1px;
+                                        border-color: fx.enabled ? #00e7a0 : #2a2b2f;
+                                        background: #1a1b1e;
+
+                                        VerticalBox {
+                                            padding: 8px;
+                                            spacing: 4px;
+                                            HorizontalBox {
+                                                Text {
+                                                    text: fx.name + "  (" + fx.kind + ")";
+                                                    color: #ffffff;
+                                                    font-size: 12px;
+                                                    font-weight: 600;
+                                                    vertical-alignment: center;
+                                                    horizontal-stretch: 1;
+                                                }
+                                                Button {
+                                                    text: fx.enabled ? "ON" : "OFF";
+                                                    primary: fx.enabled;
+                                                    clicked => { root.toggle-camera-effect(fx.id); }
+                                                }
+                                                Button {
+                                                    text: "✕";
+                                                    clicked => { root.remove-camera-effect(fx.id); }
+                                                }
+                                            }
+                                            Text {
+                                                text: "Intensità " + fx.intensity + "%";
+                                                color: #8b8d91;
+                                                font-size: 10px;
+                                            }
+                                            Slider {
+                                                minimum: 0; maximum: 100; value: fx.intensity;
+                                                changed(v) => { root.set-camera-effect-intensity(fx.id, v); }
+                                            }
+                                        }
+                                    }
+                                    if root.camera-effects.length == 0: Text {
+                                        text: "Nessun effetto. Aggiungine uno sopra.";
+                                        color: #8b8d91;
+                                        font-size: 11px;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // SCREEN CAPTURE — Spectacle-style GUI
+            if root.page == 4: VerticalBox {
+                padding: 24px;
+                spacing: 16px;
+
+                HorizontalBox {
+                    Text {
+                        text: "Cattura schermo";
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "  ·  stile Spectacle";
+                        color: #8b8d91;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    Text {
+                        text: root.capture-status;
+                        color: #00e7a0;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: "Scegli cosa catturare, un eventuale ritardo, poi Avvia.";
+                    color: #8b8d91;
+                    font-size: 12px;
+                }
+
+                // Mode cards
+                HorizontalBox {
+                    spacing: 12px;
+
+                    Rectangle {
+                        border-radius: 14px;
+                        border-width: 2px;
+                        border-color: root.capture-mode == "full" ? #00e7a0 : #2a2b2f;
+                        background: root.capture-mode == "full" ? #12332c : #1a1b1e;
+                        min-width: 160px;
+                        height: 120px;
+                        TouchArea {
+                            clicked => { root.set-capture-mode("full"); }
+                            VerticalBox {
+                                padding: 16px;
+                                spacing: 8px;
+                                Text {
+                                    text: "🖥";
+                                    font-size: 28px;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Schermo intero";
+                                    color: #ffffff;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Tutto il display";
+                                    color: #8b8d91;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        border-radius: 14px;
+                        border-width: 2px;
+                        border-color: root.capture-mode == "window" ? #00e7a0 : #2a2b2f;
+                        background: root.capture-mode == "window" ? #12332c : #1a1b1e;
+                        min-width: 160px;
+                        height: 120px;
+                        TouchArea {
+                            clicked => { root.set-capture-mode("window"); }
+                            VerticalBox {
+                                padding: 16px;
+                                spacing: 8px;
+                                Text {
+                                    text: "🗔";
+                                    font-size: 28px;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Finestra";
+                                    color: #ffffff;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Finestra attiva";
+                                    color: #8b8d91;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        border-radius: 14px;
+                        border-width: 2px;
+                        border-color: root.capture-mode == "region" ? #00e7a0 : #2a2b2f;
+                        background: root.capture-mode == "region" ? #12332c : #1a1b1e;
+                        min-width: 160px;
+                        height: 120px;
+                        TouchArea {
+                            clicked => { root.set-capture-mode("region"); }
+                            VerticalBox {
+                                padding: 16px;
+                                spacing: 8px;
+                                Text {
+                                    text: "⬚";
+                                    font-size: 28px;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Regione";
+                                    color: #ffffff;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Selezione area";
+                                    color: #8b8d91;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Options
+                Rectangle {
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 16px;
+                        spacing: 12px;
+
+                        Text {
+                            text: "OPZIONI";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+
+                        HorizontalBox {
+                            spacing: 12px;
+                            Text {
+                                text: "Ritardo";
+                                color: #e6e7e9;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                width: 80px;
+                            }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button {
+                                    text: "0 s";
+                                    primary: root.capture-delay == 0;
+                                    clicked => { root.set-capture-delay(0); }
+                                }
+                                Button {
+                                    text: "2 s";
+                                    primary: root.capture-delay == 2;
+                                    clicked => { root.set-capture-delay(2); }
+                                }
+                                Button {
+                                    text: "5 s";
+                                    primary: root.capture-delay == 5;
+                                    clicked => { root.set-capture-delay(5); }
+                                }
+                                Button {
+                                    text: "10 s";
+                                    primary: root.capture-delay == 10;
+                                    clicked => { root.set-capture-delay(10); }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 12px;
+                            Text {
+                                text: "Clipboard";
+                                color: #e6e7e9;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                width: 80px;
+                            }
+                            Button {
+                                text: root.capture-clipboard ? "Copia dopo cattura: ON" : "Copia dopo cattura: OFF";
+                                primary: root.capture-clipboard;
+                                clicked => { root.toggle-capture-clipboard(); }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 12px;
+                            Text {
+                                text: "Cartella";
+                                color: #e6e7e9;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                width: 80px;
+                            }
+                            Text {
+                                text: "~/Pictures/GearCraft";
+                                color: #8b8d91;
+                                font-size: 12px;
+                                font-family: "monospace";
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // Last capture + main action
+                Rectangle {
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #141518;
+                    VerticalBox {
+                        padding: 16px;
+                        spacing: 8px;
+                        Text {
+                            text: "ULTIMA CATTURA";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.capture-last-path;
+                            color: #ffffff;
+                            font-size: 12px;
+                            font-family: "monospace";
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 12px;
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    Button {
+                        text: "Annulla / Engine";
+                        clicked => { root.page = 0; }
+                    }
+                    Button {
+                        text: "▶  Avvia cattura";
+                        primary: true;
+                        clicked => { root.start-capture(); }
+                    }
+                }
+
+                Text {
+                    text: "Backend: Spectacle → GNOME → grim/slurp → maim/scrot";
+                    color: #5a5b5f;
+                    font-size: 10px;
+                }
+            }
+
+        }
+    }
+
+        } // end main VerticalBox (title + body)
+
+        // Settings panel (themed overlay)
+        if root.show-settings: Rectangle {
+            x: 0; y: 0;
+            width: 100%;
+            height: 100%;
+            background: #00000099;
+            TouchArea { clicked => { root.show-settings = false; } }
+
+            Rectangle {
+                width: 420px;
+                height: 320px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: #2a2b2f;
+                background: #1a1b1e;
+
+                VerticalBox {
+                    padding: 20px;
+                    spacing: 12px;
+                    Text {
+                        text: "Impostazioni";
+                        color: #ffffff;
+                        font-size: 18px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Preferenze applicazione GearCraft";
+                        color: #8b8d91;
+                        font-size: 12px;
+                    }
+                    Rectangle { height: 1px; background: #2a2b2f; }
+                    Text {
+                        text: "• Tema: scuro (accent #00E7A0)\n• UI: Slint client-side decorations\n• Daemon: socket Unix XDG_RUNTIME_DIR\n• Camera: V4L2 preview";
+                        color: #c8c9cc;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { vertical-stretch: 1; background: transparent; }
+                    HorizontalBox {
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        Button {
+                            text: "Chiudi";
+                            primary: true;
+                            clicked => { root.show-settings = false; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Help panel
+        if root.show-help: Rectangle {
+            x: 0; y: 0;
+            width: 100%;
+            height: 100%;
+            background: #00000099;
+            TouchArea { clicked => { root.show-help = false; } }
+
+            Rectangle {
+                width: 440px;
+                height: 340px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: #00e7a040;
+                background: #1a1b1e;
+
+                VerticalBox {
+                    padding: 20px;
+                    spacing: 10px;
+                    Text {
+                        text: "Aiuto · GearCraft";
+                        color: #00e7a0;
+                        font-size: 18px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Engine — RGB e device HID\nSonar — mixer, ChatMix, EQ, mic\nCamera — preview V4L2, foto, effetti\nPrism — effetti illuminazione\nCattura — screenshot integrata\n\nTitle bar: ⚙ impostazioni · ? aiuto · — □ ✕ finestra";
+                        color: #c8c9cc;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { vertical-stretch: 1; background: transparent; }
+                    HorizontalBox {
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        Button {
+                            text: "OK";
+                            primary: true;
+                            clicked => { root.show-help = false; }
                         }
                     }
                 }

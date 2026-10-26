@@ -1,0 +1,8 @@
+# GearCraft — access HID gaming peripherals (uaccess tag for active seat)
+# SteelSeries
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", MODE="0660", TAG+="uaccess"
+# Razer
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", MODE="0660", TAG+="uaccess"
+# Also match USB device nodes used by some stacks
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1532", MODE="0660", TAG+="uaccess"
