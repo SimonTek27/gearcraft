@@ -293,6 +293,7 @@ export component App inherits Window {
     callback toggle-mic-lowpass();
     callback toggle-mic-compressor();
     callback toggle-preset-rule(string);
+    callback toggle-channel-preset(string);
 
     // Custom window chrome
     in-out property <bool> win-maximized: false;
@@ -790,7 +791,7 @@ export component App inherits Window {
                                     border-width: 1px;
                                     border-color: #2a2b2f;
                                     TouchArea {
-                                        clicked => { root.page = 5; }
+                                        clicked => { root.active-preset-name = ch.preset-name; root.page = 5; }
                                         Text {
                                             text: ch.preset-name;
                                             color: #00e7a0;
@@ -811,7 +812,7 @@ export component App inherits Window {
                                     border-width: 1px;
                                     border-color: ch.preset-on ? #00e7a0 : #2a2b2f;
                                     TouchArea {
-                                        clicked => { }
+                                        clicked => { root.toggle-channel-preset(ch.id); }
                                         Text {
                                             text: ch.preset-on ? "ON" : "OFF";
                                             color: ch.preset-on ? #00e7a0 : #8b8d91;
@@ -1388,6 +1389,43 @@ export component App inherits Window {
                                     root.prism-effect = "static";
                                 }
                             }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #2a2b2f;
+                    background: #1a1b1e;
+                    VerticalBox {
+                        padding: 12px;
+                        spacing: 8px;
+                        HorizontalBox {
+                            Text {
+                                text: "DPI MOUSE · libratbag";
+                                color: #8b8d91;
+                                font-size: 11px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "  " + root.mouse-dpi-label;
+                                color: #00e7a0;
+                                font-size: 11px;
+                            }
+                            Rectangle { horizontal-stretch: 1; background: transparent; }
+                            Button {
+                                text: "Aggiorna";
+                                clicked => { root.refresh-mouse-info(); }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Button { text: "400"; clicked => { root.set-device-dpi(400); } }
+                            Button { text: "800"; clicked => { root.set-device-dpi(800); } }
+                            Button { text: "1600"; clicked => { root.set-device-dpi(1600); } }
+                            Button { text: "3200"; clicked => { root.set-device-dpi(3200); } }
+                            Button { text: "6400"; clicked => { root.set-device-dpi(6400); } }
                         }
                     }
                 }

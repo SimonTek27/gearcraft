@@ -316,6 +316,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak = ui.as_weak();
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_channel_preset(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let model = ui.get_channels();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    if row.id.as_str() == id.as_str() {
+                        row.preset_on = !row.preset_on;
+                    }
+                    rows.push(row);
+                }
+            }
+            ui.set_channels(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
     ui.on_toggle_preset_rule(move |preset_id| {
         if let Some(ui) = ui_weak.upgrade() {
             let device_id = ui.get_selected_device_id().to_string();
