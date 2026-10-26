@@ -899,6 +899,8 @@ export component App inherits Window {
                 HorizontalBox {
                     spacing: 8px;
                     alignment: start;
+                    // 6 canali x 132px + 5 gap x 8px = 832px
+                    width: 832px;
 
                     for ch in root.channels: Rectangle {
                         border-radius: 12px;
@@ -1212,9 +1214,10 @@ export component App inherits Window {
                 }
 
 
-                // ChatMix bar (always)
+                // ChatMix bar (aligns with the mixer width, does not go beyond)
                 Rectangle {
                     height: 72px;
+                    width: 832px;
                     border-radius: 12px;
                     border-width: 1px;
                     border-color: #2a2b2f;
