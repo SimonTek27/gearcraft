@@ -17,6 +17,7 @@ pub enum LedId {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum Effect {
     Off = 0x00,
     Static = 0x01,

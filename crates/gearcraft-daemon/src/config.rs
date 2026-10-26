@@ -55,6 +55,7 @@ pub fn load_settings() -> Settings {
     }
 }
 
+#[allow(dead_code)]
 pub fn save_settings(settings: &Settings) -> Result<(), String> {
     write_json(&settings_path(), settings)
 }

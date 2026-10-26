@@ -316,7 +316,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak = ui.as_weak();
-    let ui_weak = ui.as_weak();
     ui.on_toggle_channel_preset(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             let model = ui.get_channels();

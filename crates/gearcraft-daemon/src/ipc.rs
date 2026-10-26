@@ -65,6 +65,7 @@ impl DeviceRegistry {
         &self.devices
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, id: &str) -> Option<&DeviceInfo> {
         self.devices.iter().find(|d| d.id == id)
     }
