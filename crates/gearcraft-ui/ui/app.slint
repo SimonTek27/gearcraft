@@ -224,6 +224,10 @@ export component App inherits Window {
     in-out property <bool> chatmix-ready: false;
     in-out property <bool> streamer-mode: false;
     in-out property <string> fx-channel: "";
+    // Settings
+    in-out property <bool> settings-autostart: false;
+    in-out property <string> settings-language: "sistema";
+    in-out property <string> settings-theme: "dark";
     in-out property <bool> sonar-enabled: true;
     in-out property <[PresetRow]> presets: [];
     in-out property <string> active-preset-id: "";
@@ -2519,8 +2523,8 @@ export component App inherits Window {
             TouchArea { clicked => { root.show-settings = false; } }
 
             Rectangle {
-                width: 420px;
-                height: 320px;
+                width: 460px;
+                height: 430px;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 border-radius: 12px;
@@ -2530,25 +2534,143 @@ export component App inherits Window {
 
                 VerticalBox {
                     padding: 20px;
-                    spacing: 12px;
-                    Text {
-                        text: "Impostazioni";
-                        color: #ffffff;
-                        font-size: 18px;
-                        font-weight: 700;
-                    }
-                    Text {
-                        text: "Preferenze applicazione GearCraft";
-                        color: #8b8d91;
-                        font-size: 12px;
+                    spacing: 10px;
+                    HorizontalBox {
+                        Text {
+                            text: "Impostazioni";
+                            color: #ffffff;
+                            font-size: 18px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "  ·  Preferenze GearCraft";
+                            color: #8b8d91;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        ConsoleButton {
+                            text: "✕";
+                            clicked => { root.show-settings = false; }
+                        }
                     }
                     Rectangle { height: 1px; background: #2a2b2f; }
-                    Text {
-                        text: "• Tema: scuro (accent #00E7A0)\n• UI: Slint client-side decorations\n• Daemon: socket Unix XDG_RUNTIME_DIR\n• Camera: V4L2 preview";
-                        color: #c8c9cc;
-                        font-size: 12px;
-                        wrap: word-wrap;
+
+                    // Autostart
+                    HorizontalBox {
+                        Text {
+                            text: "Esegui all'avvio del sistema";
+                            color: #c8c9cc;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        ToggleSwitch {
+                            checked: root.settings-autostart;
+                            toggled => { root.settings-autostart = !root.settings-autostart; }
+                        }
                     }
+                    Text {
+                        text: "Avvia GearCraft (daemon + UI) al login del desktop";
+                        color: #5a5b5f;
+                        font-size: 10px;
+                    }
+
+                    Rectangle { height: 1px; background: #2a2b2f; }
+
+                    // Language
+                    Text {
+                        text: "Lingua";
+                        color: #8b8d91;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        ConsoleButton {
+                            text: "<Sistema>";
+                            primary: root.settings-language == "sistema";
+                            clicked => { root.settings-language = "sistema"; }
+                        }
+                        ConsoleButton {
+                            text: "Italiano";
+                            primary: root.settings-language == "it";
+                            clicked => { root.settings-language = "it"; }
+                        }
+                        ConsoleButton {
+                            text: "English";
+                            primary: root.settings-language == "en";
+                            clicked => { root.settings-language = "en"; }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        ConsoleButton {
+                            text: "Deutsch";
+                            primary: root.settings-language == "de";
+                            clicked => { root.settings-language = "de"; }
+                        }
+                        ConsoleButton {
+                            text: "Français";
+                            primary: root.settings-language == "fr";
+                            clicked => { root.settings-language = "fr"; }
+                        }
+                        ConsoleButton {
+                            text: "Español";
+                            primary: root.settings-language == "es";
+                            clicked => { root.settings-language = "es"; }
+                        }
+                        ConsoleButton {
+                            text: "Português";
+                            primary: root.settings-language == "pt";
+                            clicked => { root.settings-language = "pt"; }
+                        }
+                    }
+                    Text {
+                        text: "Default: <Sistema> — segue la lingua del desktop";
+                        color: #5a5b5f;
+                        font-size: 10px;
+                    }
+
+                    Rectangle { height: 1px; background: #2a2b2f; }
+
+                    // Theme
+                    Text {
+                        text: "Tema";
+                        color: #8b8d91;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        ConsoleButton {
+                            text: "Dark";
+                            primary: root.settings-theme == "dark";
+                            clicked => { root.settings-theme = "dark"; }
+                        }
+                        ConsoleButton {
+                            text: "Light";
+                            primary: root.settings-theme == "light";
+                            clicked => { root.settings-theme = "light"; }
+                        }
+                        ConsoleButton {
+                            text: "Sistema";
+                            primary: root.settings-theme == "sistema";
+                            clicked => { root.settings-theme = "sistema"; }
+                        }
+                        ConsoleButton {
+                            text: "Personalizzato";
+                            primary: root.settings-theme == "custom";
+                            clicked => { root.settings-theme = "custom"; }
+                        }
+                    }
+                    Text {
+                        text: "Accent: #00E7A0 · stile compilato: fluent-dark (Switch stile runtime previsione Slint 1.6)";
+                        color: #5a5b5f;
+                        font-size: 10px;
+                    }
+
                     Rectangle { vertical-stretch: 1; background: transparent; }
                     HorizontalBox {
                         Rectangle { horizontal-stretch: 1; background: transparent; }

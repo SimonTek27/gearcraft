@@ -219,6 +219,7 @@ cargo build --workspace && cargo test --workspace
 5. **Audio presets** — rimossi da Sonar; la gestione preset è su pagina 5 (Preset/FX) e via lista preset nel daemon.
 6. **Slider `enabled` su ConsoleButton** — il campo `enabled` esiste ma non è sempre propagato (alcuni pulsanti non lo usano).
 7. **Slint 1.6 warnings** — 19× `std::usize::MAX` nel codice generato; risolvibili solo aggiornando Slint.
+8. **Settings panel** — contiene toggles per "Esegui all'avvio del sistema", lingua (`<sistema>` default) e tema (Dark / Light / Sistema / Personalizzato). Persistenza attualmente in-memory: da collegare a IPC `save_settings` (esiste in `config.rs`). Cambio tema runtime non applicabile con Slint 1.6 (stile fissato a compile-time in `build.rs`).
 
 ---
 
