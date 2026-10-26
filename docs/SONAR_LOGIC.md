@@ -88,10 +88,11 @@ Ogni canale ha una scheda dedicata con preset + effetti:
 | App routing/riquadro app | box "App" per canale | dati da daemon mancanti |
 | Stream out = sink unico | `gearcraft.mic`/sinks PipeWire | lato daemon |
 
-## 8. Decisione da prendere
+## 8. Logica ufficiale adottata (decisione presa)
 
-1. **Master con due fader** quando streamer-mode è ON (personal + stream), come da logica Sonar ufficiale → raccomandato per coerenza col video.
-2. Le "due voci per canale" veritiere di Sonar non sono "2 uscite diverse" ma **lo stesso segnale con volume personal e stream separati**:
-   → implementare `personal-volume` / `stream-volume` per il canale (in luogo di `volume` / `streamer-volume`).
-3. Mute separato: introdurre `mute-personal` / `mute-stream` (o fader al minimo).
-4. Toggle "includi in stream"/"includi in personal" per canale (sostituisce/affianca `preset-on`).
+UI allineata alla logica ufficiale:
+
+1. **Master con due fader** quando streamer-mode è ON (🎧 personal + 📡 stream) — rimosso il divieto sul master.
+2. Il fader destro è lo **stream mix dello stesso segnale**; semantica: `volume` = personal, `streamer-volume` = stream.
+3. **Mute**: ufficialmente un solo pulsante mute per canale (il canale si spegne su entrambi i mix) → mantenuto il singolo "M".
+4. Toggle "includi in personal/stream" (pannello ⚙ di Sonar): non presente; `pan` + fader pescano da `ChannelRow`; da valutare in futuro.

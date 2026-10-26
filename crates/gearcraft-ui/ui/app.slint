@@ -1125,7 +1125,26 @@ export component App inherits Window {
                                 }
                             }
 
-                            // Faders. Streamer ON → left: output (normale), right: streamer.
+                            // Faders. Official logic: left = PERSONAL, right = STREAM,
+                            // same signal, separate levels.
+                            if root.streamer-mode: HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: "🎧 Personal";
+                                    color: #8b8d91;
+                                    font-size: 8px;
+                                    horizontal-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: "📡 Stream";
+                                    color: #ff6b6b;
+                                    font-size: 8px;
+                                    horizontal-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
                             HorizontalBox {
                                 spacing: 6px;
                                 alignment: stretch;
@@ -1177,8 +1196,8 @@ export component App inherits Window {
                                     }
                                 }
 
-                                // Right fader: streamer output (solo streamer-mode, mai MASTER)
-                                if root.streamer-mode && ch.id != "master": Rectangle {
+                                // Right fader: STREAM mix (utile in streamer-mode)
+                                if root.streamer-mode: Rectangle {
                                     height: 120px;
                                     horizontal-stretch: 1;
 
