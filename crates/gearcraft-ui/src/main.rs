@@ -50,6 +50,92 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // ---- Navigation history (home / back / forward / refresh) ----
+    let hist = std::rc::Rc::new(std::cell::RefCell::new(vec![0i32]));
+    let idx = std::rc::Rc::new(std::cell::RefCell::new(0usize));
+
+    {
+        let hist = hist.clone();
+        let idx = idx.clone();
+        let ui_weak = ui.as_weak();
+        ui.on_go(move |p| {
+            let p = p as i32;
+            {
+                let mut h = hist.borrow_mut();
+                let mut i = idx.borrow_mut();
+                h.truncate(*i + 1);
+                if h.last() != Some(&p) {
+                    h.push(p);
+                    *i = h.len() - 1;
+                }
+            }
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_page(p);
+            }
+        });
+    }
+
+    {
+        let hist = hist.clone();
+        let idx = idx.clone();
+        let ui_weak = ui.as_weak();
+        ui.on_nav_back(move || {
+            let h = hist.borrow();
+            let mut i = idx.borrow_mut();
+            if *i > 0 {
+                *i -= 1;
+                let p = h[*i];
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.set_page(p);
+                }
+            }
+        });
+    }
+
+    {
+        let hist = hist.clone();
+        let idx = idx.clone();
+        let ui_weak = ui.as_weak();
+        ui.on_nav_forward(move || {
+            let h = hist.borrow();
+            let mut i = idx.borrow_mut();
+            if *i + 1 < h.len() {
+                *i += 1;
+                let p = h[*i];
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.set_page(p);
+                }
+            }
+        });
+    }
+
+    let ui_weak = ui.as_weak();
+    ui.on_nav_refresh(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            refresh(&ui);
+            refresh_chatmix(&ui);
+            refresh_audio_presets(&ui);
+        }
+    });
+
+    // ---- Streamer volume (right fader) ----
+    let ui_weak = ui.as_weak();
+    ui.on_channel_streamer_volume(move |id, value| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let model = ui.get_channels();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    if row.id.as_str() == id.as_str() {
+                        row.streamer_volume = value;
+                    }
+                    rows.push(row);
+                }
+            }
+            ui.set_channels(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+
     let ui_weak = ui.as_weak();
     ui.on_apply_color(move || {
         if let Some(ui) = ui_weak.upgrade() {
