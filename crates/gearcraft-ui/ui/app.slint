@@ -228,6 +228,7 @@ export component App inherits Window {
     in-out property <bool> settings-autostart: false;
     in-out property <string> settings-language: "sistema";
     in-out property <string> settings-theme: "dark";
+    in-out property <bool> rgb-enabled: true;
     in-out property <bool> sonar-enabled: true;
     in-out property <[PresetRow]> presets: [];
     in-out property <string> active-preset-id: "";
@@ -901,6 +902,19 @@ export component App inherits Window {
                         ToggleSwitch {
                             checked: root.sonar-enabled;
                             toggled => { root.toggle-sonar(); }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "RGB";
+                            color: #8b8d91;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        ToggleSwitch {
+                            checked: root.rgb-enabled;
+                            toggled => { root.rgb-enabled = !root.rgb-enabled; }
                         }
                     }
                     ConsoleButton {
