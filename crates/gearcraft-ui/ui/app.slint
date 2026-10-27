@@ -1,1 +1,16 @@
-PLACEHOLDER
+// Full UI is in app.slint.gz.b64 — run: bash scripts/restore-app-slint.sh
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+export component App inherits Window {
+    title: "GearCraft";
+    preferred-width: 800px;
+    preferred-height: 600px;
+    background: #1a1d26;
+    VerticalBox {
+        padding: 24px;
+        Text {
+            text: "Run scripts/restore-app-slint.sh to unpack the full UI.";
+            color: #00e7a0;
+            font-size: 16px;
+        }
+    }
+}
