@@ -4,14 +4,14 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Background daemon for GearCraft – USB HID + Unix socket IPC"
+description = "Background daemon for GearCraft – USB HID + IPC (Unix socket / Windows named pipe)"
 
 [[bin]]
 name = "gearcraft-daemon"
 path = "src/main.rs"
 
 [features]
-default = ["hidapi"]
+default = []
 hidapi = ["dep:hidapi"]
 
 [dependencies]
