@@ -1,17 +1,25 @@
 # Push status (2026-10-27)
 
-Large `app.slint` (~193KB) needs a follow-up restore if the tree shows PLACEHOLDER.
+## On GitHub `main`
+- Docs: `CAMERA_UI.md`, `UI_PALETTE.md`, `STREAMER_CHATMIX.md`, `WINDOWS.md`
+- Windows packaging: `packaging/windows/*`, `scripts/cross-windows.sh`
+- `audio_windows.rs` stub, Cargo.toml v4l linux-only
+- `scripts/restore-app-slint.sh` (expects blob parts when present)
+- `crates/gearcraft-ui/ui/app.slint` currently a **short stub** (restore message) because the full ~193KB file exceeds the push channel used in this session
 
-**Local source of truth:** full project tree under artifacts/gearcraft.
+## Full UI source of truth
+Local / artifacts tree: `crates/gearcraft-ui/ui/app.slint` with:
+- Sonar palette, ChatMix between Game/Chat, MixerFader + LEDs, streamer dual path
+- Camera: Attrezzatura / Effetti tabs, Foto/Video/QR
 
-Already on main in this push series: Camera docs, UI palette, ChatMix/streamer docs, Windows packaging, Cargo target gates, audio_windows stub.
+Also packaged as `gearcraft-full.zip` in project artifacts.
 
-To restore UI from a machine with the full tree:
+## Restore on a clone
+Copy the full `app.slint` from your local build tree, or unpack `gearcraft-full.zip`, then commit:
 
 ```bash
-git clone https://github.com/SimonTek27/gearcraft
-# copy crates/gearcraft-ui/ui/app.slint from local full tree
-git add crates/gearcraft-ui/ui/app.slint crates/gearcraft-ui/src/
+cp /path/to/full/app.slint crates/gearcraft-ui/ui/app.slint
+git add crates/gearcraft-ui/ui/app.slint
 git commit -m "Restore full Slint UI"
 git push
 ```
