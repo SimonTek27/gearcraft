@@ -39,7 +39,8 @@ impl DeviceManager {
         self.state = state;
     }
 
-    pub fn set_policy(&mut self, policy: ChannelDevicePolicy) {
+    pub fn set_policy(&mut self, mut policy: ChannelDevicePolicy) {
+        policy.sync_priority_from_primary_backup();
         if let Some(slot) = self
             .state
             .channels
