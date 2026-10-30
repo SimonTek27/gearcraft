@@ -1,25 +1,31 @@
-# Push status (2026-10-27)
+# Push status (updated 2026-10-30)
 
-## On GitHub `main`
-- Docs: `CAMERA_UI.md`, `UI_PALETTE.md`, `STREAMER_CHATMIX.md`, `WINDOWS.md`
-- Windows packaging: `packaging/windows/*`, `scripts/cross-windows.sh`
-- `audio_windows.rs` stub, Cargo.toml v4l linux-only
-- `scripts/restore-app-slint.sh` (expects blob parts when present)
-- `crates/gearcraft-ui/ui/app.slint` currently a **short stub** (restore message) because the full ~193KB file exceeds the push channel used in this session
+## UI source of truth
 
-## Full UI source of truth
-Local / artifacts tree: `crates/gearcraft-ui/ui/app.slint` with:
-- Sonar palette, ChatMix between Game/Chat, MixerFader + LEDs, streamer dual path
-- Camera: Attrezzatura / Effetti tabs, Foto/Video/QR
+`crates/gearcraft-ui/ui/app.slint` in this repository **is the full UI again**
+(2 747 lines). It was replaced by a `PLACEHOLDER`/restore-stub in the
+2026-10-27 session (the `app.slint.gz.b64.part*` blobs were never committed),
+so the restored file was taken from the last commit that still had it:
+`1b2b9a8`.
 
-Also packaged as `gearcraft-full.zip` in project artifacts.
+`scripts/restore-app-slint.sh` and `ui/README_SLINT.md` are kept for reference
+but are no longer needed — the `.part*` files do not exist in this tree.
 
-## Restore on a clone
-Copy the full `app.slint` from your local build tree, or unpack `gearcraft-full.zip`, then commit:
+## Wiring status (2026-10-30)
 
-```bash
-cp /path/to/full/app.slint crates/gearcraft-ui/ui/app.slint
-git add crates/gearcraft-ui/ui/app.slint
-git commit -m "Restore full Slint UI"
-git push
-```
+- All Slint callbacks declared in `app.slint` are wired in
+  `crates/gearcraft-ui/src/main.rs` (camera, Prism/DPI, screen capture,
+  FX page, Mic FX, window chrome).
+- `crates/gearcraft-ui/src/camera.rs` is compiled again (`mod camera;`).
+- The daemon compiles `drivers/`, `mic_fx.rs`, `screenshot.rs`,
+  `game_presets.rs` and `jamesdsp_import.rs` again, and exposes them over IPC
+  (`GetMouseInfo`, `SetDpi`, `SetEffect`, `PrismSync`, `GetMicFx`, `SetMicFx`,
+  `ApplyAudioEffects`, `CaptureScreenshot`, `ImportJamesDspPreset`,
+  `ImportJamesDspDir`) — see [PROTOCOL.md](../PROTOCOL.md).
+- `MicFxState` now lives in `gearcraft-core` (it was referenced by `mic_fx.rs`
+  but missing, which is why that module was dropped).
+
+## Windows packaging
+
+- `packaging/windows/*`, `scripts/cross-windows.sh` are present.
+- `audio_windows.rs` is still a WASAPI/APO placeholder.

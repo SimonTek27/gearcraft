@@ -1,7 +1,12 @@
 //! GearCraft UI — Slint desktop frontend.
 
+mod camera;
 mod ipc;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gearcraft_core::{AudioEffects, EqBand, MicFxState, RgbColor};
 use serde_json::Value;
 use slint::{Model, ModelRc, SharedString, VecModel};
 
@@ -16,6 +21,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let ui = App::new()?;
+
+    // FX / Mic FX state shared by their handlers (updated when a preset loads).
+    let fx_base: Rc<RefCell<AudioEffects>> = Rc::new(RefCell::new(AudioEffects::default()));
+    let mic_fx: Rc<RefCell<MicFxState>> = Rc::new(RefCell::new(MicFxState::default()));
+
     refresh(&ui);
     refresh_chatmix(&ui);
     refresh_audio_presets(&ui);
@@ -238,6 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak = ui.as_weak();
+    let fx_base_preset = fx_base.clone();
     ui.on_load_preset(move |id| {
         if let Some(ui) = ui_weak.upgrade() {
             match ipc::load_audio_preset(id.as_str()) {
@@ -248,6 +259,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or("preset");
                     ui.set_active_preset_id(id.clone());
                     ui.set_active_preset_name(SharedString::from(name));
+                    if let Some(effects) = v
+                        .get("effects")
+                        .cloned()
+                        .and_then(|e| serde_json::from_value::<AudioEffects>(e).ok())
+                    {
+                        *fx_base_preset.borrow_mut() = effects.clone();
+                        sync_fx_ui(&ui, &effects);
+                    }
                     ui.set_status_text(SharedString::from(format!("Preset loaded: {name}")));
                     refresh_chatmix(&ui);
                     refresh_audio_presets(&ui);
@@ -351,12 +370,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return;
                 }
             };
-            let policy = gearcraft_core::ChannelDevicePolicy {
-                channel: channel_id,
-                priority: vec![dev_id],
-                excluded: vec![],
-                active_device_id: None,
-            };
+            let mut policy = gearcraft_core::ChannelDevicePolicy::new(channel_id);
+            policy.priority = vec![dev_id.clone()];
+            policy.primary_device_id = Some(dev_id);
+            policy.sync_priority_from_primary_backup();
             match ipc::set_channel_device_policy(policy) {
                 Ok(_) => {
                     ui.set_status_text(SharedString::from(format!("Assigned output to {ch}")));
@@ -481,6 +498,627 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // ------------------------------------------------------------------
+    // Window chrome (custom CSD titlebar)
+    // ------------------------------------------------------------------
+    let ui_weak = ui.as_weak();
+    ui.on_win_minimize(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.window().set_minimized(true);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_win_maximize(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let maximized = !ui.window().is_maximized();
+            ui.window().set_maximized(maximized);
+            ui.set_win_maximized(maximized);
+        }
+    });
+
+    ui.on_win_close(move || {
+        let _ = slint::quit_event_loop();
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_open_settings(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let show = !ui.get_show_settings();
+            ui.set_show_settings(show);
+            ui.set_show_help(false);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_open_help(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let show = !ui.get_show_help();
+            ui.set_show_help(show);
+            ui.set_show_settings(false);
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Screen capture (Engine → Cattura)
+    // ------------------------------------------------------------------
+    let ui_weak = ui.as_weak();
+    ui.on_set_capture_mode(move |mode| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_capture_mode(mode);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_set_capture_delay(move |delay| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_capture_delay(delay.clamp(0, 30));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_capture_clipboard(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let on = !ui.get_capture_clipboard();
+            ui.set_capture_clipboard(on);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_start_capture(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let mode = ui.get_capture_mode().to_string();
+            run_capture(&ui, &mode);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_take_screenshot(move |mode| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_capture_mode(mode.clone());
+            run_capture(&ui, &mode.to_string());
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Prism / Engine — RGB effects + DPI through official driver backends
+    // ------------------------------------------------------------------
+    let ui_weak = ui.as_weak();
+    ui.on_set_prism_effect(move |effect| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_prism_effect(effect);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_open_prism(move |device_id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_selected_device_id(device_id.clone());
+            let devices = ui.get_devices();
+            let mut name = SharedString::from("—");
+            for i in 0..devices.row_count() {
+                if let Some(row) = devices.row_data(i) {
+                    if row.id == device_id {
+                        name = row.name;
+                        break;
+                    }
+                }
+            }
+            ui.set_selected_device_name(name);
+            ui.set_page(2);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_apply_prism(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let id = ui.get_selected_device_id().to_string();
+            if id.is_empty() {
+                say(&ui, "Select a device first");
+                return;
+            }
+            let zone = ui.get_color_zone().to_string();
+            let effect = ui.get_prism_effect().to_string();
+            let color = ui_color(&ui);
+            match ipc::set_effect(&id, &zone, &effect, Some(color)) {
+                Ok(v) => {
+                    let backend = v
+                        .get("backend")
+                        .and_then(|b| b.as_str())
+                        .unwrap_or("hid");
+                    say(&ui, format!("{effect} applied on {id} ({backend})"));
+                }
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_prism_sync_all(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let effect = ui.get_prism_effect().to_string();
+            let zone = ui.get_color_zone().to_string();
+            let color = ui_color(&ui);
+            match ipc::prism_sync(&effect, &zone, Some(color)) {
+                Ok(v) => {
+                    let synced = v.get("synced").and_then(|x| x.as_u64()).unwrap_or(0);
+                    say(&ui, format!("PrismSync {effect}: {synced} device(s) updated"));
+                }
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_refresh_mouse_info(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let id = ui.get_selected_device_id().to_string();
+            if id.is_empty() {
+                say(&ui, "Select a device first");
+                return;
+            }
+            match ipc::get_mouse_info(&id) {
+                Ok(v) => {
+                    let dpi = v.get("dpi").and_then(|x| x.as_i64()).unwrap_or(0) as i32;
+                    let name = v
+                        .get("ratbag_name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("ratbag");
+                    if dpi > 0 {
+                        ui.set_mouse_dpi(dpi);
+                        say(&ui, format!("DPI: {dpi} · {name}"));
+                    } else {
+                        say(&ui, format!("No DPI reported by {name}"));
+                    }
+                    ui.set_mouse_dpi_label(SharedString::from(format!("DPI: {dpi}")));
+                }
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_set_device_dpi(move |dpi| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let id = ui.get_selected_device_id().to_string();
+            if id.is_empty() {
+                say(&ui, "Select a device first");
+                return;
+            }
+            match ipc::set_dpi(&id, dpi.clamp(100, 26_000) as u32) {
+                Ok(_) => {
+                    ui.set_mouse_dpi(dpi);
+                    ui.set_mouse_dpi_label(SharedString::from(format!("DPI: {dpi}")));
+                    say(&ui, format!("DPI set to {dpi}"));
+                }
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // FX page — EQ / Spatial / Volume boost (live DSP apply)
+    // ------------------------------------------------------------------
+    macro_rules! wire_fx_toggle {
+        ($cb:ident, $getter:ident, $setter:ident, $field:ident) => {{
+            let ui_weak = ui.as_weak();
+            let fx_base = fx_base.clone();
+            ui.$cb(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    let next = !ui.$getter();
+                    ui.$setter(next);
+                    fx_base.borrow_mut().$field = next;
+                }
+            });
+        }};
+    }
+    wire_fx_toggle!(on_toggle_eq, get_eq_enabled, set_eq_enabled, eq_enabled);
+    wire_fx_toggle!(
+        on_toggle_spatial,
+        get_spatial_enabled,
+        set_spatial_enabled,
+        spatial_enabled
+    );
+    wire_fx_toggle!(
+        on_toggle_smart_volume,
+        get_smart_volume,
+        set_smart_volume,
+        smart_volume
+    );
+
+    let ui_weak = ui.as_weak();
+    let fx_base_spatial = fx_base.clone();
+    ui.on_set_spatial_immersion(move |v| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_spatial_immersion(v);
+            fx_base_spatial.borrow_mut().spatial_immersion = v.clamp(0, 100) as u8;
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let fx_base_spatial = fx_base.clone();
+    ui.on_set_spatial_distance(move |v| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_spatial_distance(v);
+            fx_base_spatial.borrow_mut().spatial_distance = v.clamp(0, 100) as u8;
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let fx_base_boost = fx_base.clone();
+    ui.on_set_volume_boost(move |v| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_volume_boost(v);
+            fx_base_boost.borrow_mut().volume_boost_db = v as f32;
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_eq_band_gain(move |index, gain| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let model = ui.get_eq_bands();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    if row.index == index {
+                        row.gain = gain.clamp(-12.0, 12.0);
+                    }
+                    rows.push(row);
+                }
+            }
+            ui.set_eq_bands(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_reset_eq(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let model = ui.get_eq_bands();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    row.gain = 0.0;
+                    rows.push(row);
+                }
+            }
+            ui.set_eq_bands(ModelRc::new(VecModel::from(rows)));
+            say(&ui, "EQ reset (press ‘Applica EQ’ to push it to the daemon)");
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let fx_base_apply = fx_base.clone();
+    ui.on_apply_eq(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            apply_or_report(&ui, &fx_base_apply);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let fx_base_apply = fx_base.clone();
+    ui.on_apply_spatial(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            apply_or_report(&ui, &fx_base_apply);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_reset_spatial(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_spatial_enabled(true);
+            ui.set_spatial_immersion(40);
+            ui.set_spatial_distance(40);
+            say(&ui, "Spatial reset to defaults");
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let fx_base_reset = fx_base.clone();
+    ui.on_reset_all_fx(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_eq_enabled(false);
+            ui.set_spatial_enabled(true);
+            ui.set_spatial_immersion(40);
+            ui.set_spatial_distance(40);
+            ui.set_volume_boost(0);
+            ui.set_smart_volume(false);
+            let model = ui.get_eq_bands();
+            let mut rows = Vec::new();
+            for i in 0..model.row_count() {
+                if let Some(mut row) = model.row_data(i) {
+                    row.gain = 0.0;
+                    rows.push(row);
+                }
+            }
+            ui.set_eq_bands(ModelRc::new(VecModel::from(rows)));
+            *fx_base_reset.borrow_mut() = AudioEffects::default();
+            apply_or_report(&ui, &fx_base_reset);
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Mic FX
+    // ------------------------------------------------------------------
+    macro_rules! wire_mic_toggle {
+        ($cb:ident, $getter:ident, $setter:ident, $field:ident) => {{
+            let ui_weak = ui.as_weak();
+            let mic_fx = mic_fx.clone();
+            ui.$cb(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    let next = !ui.$getter();
+                    ui.$setter(next);
+                    mic_fx.borrow_mut().$field = next;
+                }
+            });
+        }};
+    }
+    wire_mic_toggle!(
+        on_toggle_mic_mute,
+        get_mic_muted,
+        set_mic_muted,
+        muted
+    );
+    wire_mic_toggle!(
+        on_toggle_mic_highpass,
+        get_mic_highpass,
+        set_mic_highpass,
+        highpass
+    );
+    wire_mic_toggle!(
+        on_toggle_mic_gate,
+        get_mic_noise_gate,
+        set_mic_noise_gate,
+        noise_gate
+    );
+    wire_mic_toggle!(
+        on_toggle_mic_lowpass,
+        get_mic_lowpass,
+        set_mic_lowpass,
+        lowpass
+    );
+    wire_mic_toggle!(
+        on_toggle_mic_compressor,
+        get_mic_compressor,
+        set_mic_compressor,
+        compressor
+    );
+
+    let ui_weak = ui.as_weak();
+    let mic_fx_gain = mic_fx.clone();
+    ui.on_set_mic_gain(move |v| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let gain = v.clamp(0, 150);
+            ui.set_mic_gain(gain);
+            mic_fx_gain.borrow_mut().gain_pct = gain as u8;
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let mic_fx_refresh = mic_fx.clone();
+    ui.on_refresh_mic_fx(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            match ipc::get_mic_fx() {
+                Ok(v) => match serde_json::from_value::<MicFxState>(v) {
+                    Ok(state) => {
+                        sync_mic_ui(&ui, &state);
+                        *mic_fx_refresh.borrow_mut() = state;
+                        say(&ui, "Mic FX state refreshed");
+                    }
+                    Err(e) => say(&ui, format!("Mic FX: {e}")),
+                },
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let mic_fx_apply = mic_fx.clone();
+    ui.on_apply_mic_fx(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let state = mic_from_ui(&ui, &mic_fx_apply.borrow());
+            match ipc::set_mic_fx(state.clone()) {
+                Ok(v) => {
+                    *mic_fx_apply.borrow_mut() = state;
+                    let msg = v
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("mic FX applied");
+                    say(&ui, msg);
+                }
+                Err(e) => say(&ui, e.to_string()),
+            }
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Camera (V4L2 preview, photo/video, effects)
+    // ------------------------------------------------------------------
+    macro_rules! cam_str {
+        ($cb:ident, $setter:ident, $field:ident) => {{
+            let ui_weak = ui.as_weak();
+            ui.$cb(move |v| {
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.$setter(v.clone());
+                    let value = v.to_string();
+                    camera::update_settings(|s| s.$field = value);
+                }
+            });
+        }};
+    }
+    macro_rules! cam_int {
+        ($cb:ident, $setter:ident, $field:ident) => {{
+            let ui_weak = ui.as_weak();
+            ui.$cb(move |v| {
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.$setter(v);
+                    camera::update_settings(|s| s.$field = v as _);
+                }
+            });
+        }};
+    }
+
+    let ui_weak = ui.as_weak();
+    ui.on_refresh_cameras(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            refresh_cameras(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_select_camera(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            let devices = ui.get_camera_devices();
+            let mut path = SharedString::new();
+            let mut label = id.clone();
+            for i in 0..devices.row_count() {
+                if let Some(row) = devices.row_data(i) {
+                    if row.id == id {
+                        path = row.path;
+                        label = row.label;
+                        break;
+                    }
+                }
+            }
+            camera::select_device(&id.to_string(), &path.to_string());
+            ui.set_camera_device_id(id);
+            ui.set_camera_device_label(label.clone());
+            say(&ui, format!("Camera {label}"));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_camera_preview(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let msg = camera::set_preview(!camera::preview_active());
+            ui.set_camera_preview_active(camera::preview_active());
+            ui.set_camera_preview_status(SharedString::from(msg.clone()));
+            say(&ui, msg);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_set_camera_mode(move |mode| {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_camera_mode(mode);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_cam_recording(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            let (on, msg) = camera::toggle_recording();
+            ui.set_cam_video_recording(on);
+            say(&ui, msg);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_capture_photo(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            say(&ui, camera::capture_photo());
+        }
+    });
+
+    cam_str!(
+        on_set_cam_video_resolution,
+        set_cam_video_resolution,
+        video_resolution
+    );
+    cam_int!(on_set_cam_video_fps, set_cam_video_fps, video_fps);
+    cam_str!(on_set_cam_video_format, set_cam_video_format, video_format);
+    cam_int!(
+        on_set_cam_video_bitrate,
+        set_cam_video_bitrate,
+        video_bitrate_mbps
+    );
+    cam_str!(
+        on_set_cam_photo_resolution,
+        set_cam_photo_resolution,
+        photo_resolution
+    );
+    cam_str!(
+        on_set_cam_photo_format,
+        set_cam_photo_format,
+        photo_format
+    );
+    cam_int!(
+        on_set_cam_photo_quality,
+        set_cam_photo_quality,
+        photo_quality
+    );
+    cam_int!(on_set_cam_photo_timer, set_cam_photo_timer, photo_timer_s);
+    cam_int!(on_set_cam_brightness, set_cam_brightness, brightness);
+    cam_int!(on_set_cam_contrast, set_cam_contrast, contrast);
+    cam_int!(on_set_cam_saturation, set_cam_saturation, saturation);
+    cam_int!(on_set_cam_sharpness, set_cam_sharpness, sharpness);
+    cam_int!(on_set_cam_exposure, set_cam_exposure, exposure);
+    cam_int!(on_set_cam_wb_temp, set_cam_wb_temp, wb_temp);
+
+    macro_rules! cam_bool {
+        ($cb:ident, $getter:ident, $setter:ident, $field:ident) => {{
+            let ui_weak = ui.as_weak();
+            ui.$cb(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    let next = !ui.$getter();
+                    ui.$setter(next);
+                    camera::update_settings(|s| s.$field = next);
+                }
+            });
+        }};
+    }
+    cam_bool!(
+        on_toggle_cam_auto_exposure,
+        get_cam_auto_exposure,
+        set_cam_auto_exposure,
+        auto_exposure
+    );
+    cam_bool!(
+        on_toggle_cam_auto_wb,
+        get_cam_auto_wb,
+        set_cam_auto_wb,
+        auto_wb
+    );
+
+    let ui_weak = ui.as_weak();
+    ui.on_add_camera_effect(move |kind| {
+        if let Some(ui) = ui_weak.upgrade() {
+            camera::add_effect(kind.as_str());
+            refresh_camera_effects(&ui);
+            say(&ui, format!("Effect added: {kind}"));
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_remove_camera_effect(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            camera::remove_effect(id.as_str());
+            refresh_camera_effects(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_toggle_camera_effect(move |id| {
+        if let Some(ui) = ui_weak.upgrade() {
+            camera::toggle_effect(id.as_str());
+            refresh_camera_effects(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_set_camera_effect_intensity(move |id, intensity| {
+        if let Some(ui) = ui_weak.upgrade() {
+            camera::set_effect_intensity(id.as_str(), intensity.clamp(0, 100) as u8);
+            refresh_camera_effects(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_apply_camera_settings(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            say(&ui, camera::apply_summary());
+        }
+    });
+
     // Hotplug poll: keep the device list fresh without a dedicated tab
     let poll = slint::Timer::default();
     let ui_weak = ui.as_weak();
@@ -496,8 +1134,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
+    // Camera preview frames (only refreshes while a preview is running)
+    let cam_poll = slint::Timer::default();
+    let ui_weak = ui.as_weak();
+    cam_poll.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(66),
+        move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                camera_tick(&ui);
+            }
+        },
+    );
+
     ui.run()?;
     poll.stop();
+    cam_poll.stop();
+    camera::set_preview(false);
     Ok(())
 }
 
@@ -741,4 +1394,223 @@ fn refresh_device_manager(ui: &App) {
             ui.set_status_text(SharedString::from(format!("Device Manager: {e}")));
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for the FX / Mic / Prism / Capture / Camera wiring
+// ---------------------------------------------------------------------------
+
+fn say(ui: &App, msg: impl AsRef<str>) {
+    ui.set_status_text(SharedString::from(msg.as_ref()));
+}
+
+fn ui_color(ui: &App) -> RgbColor {
+    RgbColor {
+        r: (ui.get_color_r() * 255.0).round().clamp(0.0, 255.0) as u8,
+        g: (ui.get_color_g() * 255.0).round().clamp(0.0, 255.0) as u8,
+        b: (ui.get_color_b() * 255.0).round().clamp(0.0, 255.0) as u8,
+    }
+}
+
+const EQ_FREQS: [f32; 10] = [
+    31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
+
+fn eq_bands_from_ui(ui: &App) -> Vec<EqBand> {
+    let model = ui.get_eq_bands();
+    let mut bands = Vec::new();
+    for i in 0..model.row_count() {
+        if let Some(row) = model.row_data(i) {
+            bands.push(EqBand {
+                freq_hz: EQ_FREQS.get(i).copied().unwrap_or(0.0),
+                gain_db: row.gain,
+            });
+        }
+    }
+    if bands.is_empty() {
+        bands = AudioEffects::default().eq_bands;
+    }
+    bands
+}
+
+/// Overlay the FX page state on the base (preset) effects and push to the daemon.
+fn apply_or_report(ui: &App, base: &Rc<RefCell<AudioEffects>>) {
+    let mut effects = base.borrow().clone();
+    effects.eq_enabled = ui.get_eq_enabled();
+    effects.eq_bands = eq_bands_from_ui(ui);
+    effects.spatial_enabled = ui.get_spatial_enabled();
+    effects.spatial_immersion = ui.get_spatial_immersion().clamp(0, 100) as u8;
+    effects.spatial_distance = ui.get_spatial_distance().clamp(0, 100) as u8;
+    effects.volume_boost_db = ui.get_volume_boost().max(0) as f32;
+    effects.smart_volume = ui.get_smart_volume();
+
+    match ipc::apply_audio_effects(effects) {
+        Ok(v) => {
+            let msg = v
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("DSP updated");
+            say(ui, msg);
+        }
+        Err(e) => say(ui, e.to_string()),
+    }
+}
+
+/// Mirror an `AudioEffects` onto the FX page widgets.
+fn sync_fx_ui(ui: &App, effects: &AudioEffects) {
+    ui.set_eq_enabled(effects.eq_enabled);
+    ui.set_spatial_enabled(effects.spatial_enabled);
+    ui.set_spatial_immersion(effects.spatial_immersion as i32);
+    ui.set_spatial_distance(effects.spatial_distance as i32);
+    ui.set_volume_boost(effects.volume_boost_db.max(0.0) as i32);
+    ui.set_smart_volume(effects.smart_volume);
+
+    let old = ui.get_eq_bands();
+    let mut rows = Vec::new();
+    for i in 0..10 {
+        let freq_label = old
+            .row_data(i)
+            .map(|r| r.freq_label)
+            .unwrap_or_else(|| SharedString::from(""));
+        let gain = effects
+            .eq_bands
+            .get(i)
+            .map(|b| b.gain_db)
+            .unwrap_or(0.0);
+        rows.push(EqBandRow {
+            index: i as i32,
+            freq_label,
+            gain,
+        });
+    }
+    ui.set_eq_bands(ModelRc::new(VecModel::from(rows)));
+}
+
+/// Mic FX widgets → daemon state.
+fn mic_from_ui(ui: &App, state: &MicFxState) -> MicFxState {
+    let mut s = state.clone();
+    s.gain_pct = ui.get_mic_gain().clamp(0, 150) as u8;
+    s.muted = ui.get_mic_muted();
+    s.highpass = ui.get_mic_highpass();
+    s.noise_gate = ui.get_mic_noise_gate();
+    s.gate_strength = ui.get_mic_gate_strength().clamp(0, 100) as u8;
+    s.lowpass = ui.get_mic_lowpass();
+    s.compressor = ui.get_mic_compressor();
+    s
+}
+
+fn sync_mic_ui(ui: &App, state: &MicFxState) {
+    ui.set_mic_gain(state.gain_pct as i32);
+    ui.set_mic_muted(state.muted);
+    ui.set_mic_highpass(state.highpass);
+    ui.set_mic_noise_gate(state.noise_gate);
+    ui.set_mic_gate_strength(state.gate_strength as i32);
+    ui.set_mic_lowpass(state.lowpass);
+    ui.set_mic_compressor(state.compressor);
+}
+
+fn refresh_cameras(ui: &App) {
+    let devices = camera::list_devices();
+    let rows: Vec<CameraDeviceRow> = devices
+        .iter()
+        .map(|d| CameraDeviceRow {
+            id: SharedString::from(d.id.clone()),
+            label: SharedString::from(d.label.clone()),
+            path: SharedString::from(d.path.clone()),
+            available: d.available,
+        })
+        .collect();
+
+    let selected = ui.get_camera_device_id();
+    if selected.is_empty() || !rows.iter().any(|r| r.id == selected) {
+        if let Some(first) = rows.first() {
+            let (id, path, label) = (first.id.clone(), first.path.clone(), first.label.clone());
+            camera::select_device(&id.to_string(), &path.to_string());
+            ui.set_camera_device_id(id);
+            ui.set_camera_device_label(label);
+        } else {
+            ui.set_camera_device_label(SharedString::from("Nessuna camera"));
+        }
+    }
+    ui.set_camera_devices(ModelRc::new(VecModel::from(rows)));
+    refresh_camera_effects(ui);
+}
+
+fn refresh_camera_effects(ui: &App) {
+    let effects = camera::settings().effects;
+    let rows: Vec<CameraEffectRow> = effects
+        .iter()
+        .map(|e| CameraEffectRow {
+            id: SharedString::from(e.id.clone()),
+            name: SharedString::from(e.name.clone()),
+            kind: SharedString::from(e.kind.clone()),
+            enabled: e.enabled,
+            intensity: e.intensity as i32,
+        })
+        .collect();
+    ui.set_camera_effects(ModelRc::new(VecModel::from(rows)));
+}
+
+/// Run a capture on a worker thread (backends block, delays can be 10s).
+fn run_capture(ui: &App, mode: &str) {
+    let delay = ui.get_capture_delay().clamp(0, 30) as u8;
+    let clipboard = ui.get_capture_clipboard();
+    let weak = ui.as_weak();
+    ui.set_capture_status(SharedString::from(format!("Cattura {mode}…")));
+    let mode = mode.to_string();
+
+    std::thread::spawn(move || {
+        let outcome = ipc::capture_screenshot(&mode, delay, clipboard).map(|v| {
+            let path = v
+                .get("path")
+                .and_then(|p| p.as_str())
+                .unwrap_or("—")
+                .to_string();
+            let mut msg = v
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            if msg.is_empty() {
+                msg = v
+                    .get("backend")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("capture ok")
+                    .to_string();
+            }
+            (path, msg)
+        });
+        let _ = weak.upgrade_in_event_loop(move |ui| match outcome {
+            Ok((path, msg)) => {
+                ui.set_capture_last_path(SharedString::from(path));
+                ui.set_capture_status(SharedString::from(msg));
+            }
+            Err(e) => ui.set_capture_status(SharedString::from(e.to_string())),
+        });
+    });
+}
+
+/// Pull the newest camera preview frame into the UI (timer-driven).
+fn camera_tick(ui: &App) {
+    let active = camera::preview_active();
+    ui.set_camera_preview_active(active);
+    ui.set_camera_preview_status(SharedString::from(camera::preview_status()));
+    ui.set_cam_video_recording(camera::recording());
+    if !active {
+        return;
+    }
+    let Some(frame) = camera::take_frame() else {
+        return;
+    };
+    if frame.width == 0 || frame.height == 0 {
+        return;
+    }
+    let expected = frame.width as usize * frame.height as usize * 4;
+    if frame.rgba.len() < expected {
+        return;
+    }
+    let mut buf =
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(frame.width, frame.height);
+    buf.make_mut_bytes()[..expected].copy_from_slice(&frame.rgba[..expected]);
+    ui.set_camera_frame(slint::Image::from_rgba8(buf));
 }

@@ -127,6 +127,65 @@ impl Default for ChatMixState {
 }
 
 // ---------------------------------------------------------------------------
+// Microphone FX
+// ---------------------------------------------------------------------------
+
+/// Microphone chain state (gain / mute / high-pass / gate …).
+/// Applied by the daemon through `pactl` (and the WirePlumber mic filter chain).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MicFxState {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default = "default_mic_gain")]
+    pub gain_pct: u8,
+    #[serde(default = "default_true")]
+    pub highpass: bool,
+    #[serde(default = "default_highpass_hz")]
+    pub highpass_hz: f32,
+    #[serde(default)]
+    pub noise_gate: bool,
+    #[serde(default = "default_gate_strength")]
+    pub gate_strength: u8,
+    #[serde(default)]
+    pub lowpass: bool,
+    #[serde(default)]
+    pub compressor: bool,
+    #[serde(default)]
+    pub rnnoise: bool,
+}
+
+impl Default for MicFxState {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            muted: false,
+            gain_pct: default_mic_gain(),
+            highpass: true,
+            highpass_hz: default_highpass_hz(),
+            noise_gate: false,
+            gate_strength: default_gate_strength(),
+            lowpass: false,
+            compressor: false,
+            rnnoise: false,
+        }
+    }
+}
+
+fn default_mic_gain() -> u8 {
+    100
+}
+
+fn default_highpass_hz() -> f32 {
+    80.0
+}
+
+fn default_gate_strength() -> u8 {
+    40
+}
+
+// ---------------------------------------------------------------------------
 // Audio presets
 // ---------------------------------------------------------------------------
 
@@ -475,6 +534,41 @@ pub enum IpcCommand {
         device_id: String,
         #[serde(default)]
         route_id: String,
+    },
+    GetMouseInfo { device_id: String },
+    SetDpi { device_id: String, dpi: u32 },
+    PrismSync {
+        effect: String,
+        zone: String,
+        #[serde(default)]
+        color: Option<RgbColor>,
+    },
+    SetEffect {
+        device_id: String,
+        zone: String,
+        effect: String,
+        #[serde(default)]
+        color: Option<RgbColor>,
+    },
+    GetMicFx,
+    SetMicFx { state: MicFxState },
+    ApplyAudioEffects { effects: AudioEffects },
+    CaptureScreenshot {
+        mode: String,
+        #[serde(default)]
+        delay_secs: u8,
+        #[serde(default)]
+        clipboard: bool,
+    },
+    ImportJamesDspPreset {
+        path: String,
+        #[serde(default)]
+        apply: bool,
+    },
+    ImportJamesDspDir {
+        path: String,
+        #[serde(default)]
+        apply_first: bool,
     },
     GetDeviceManager,
     SetDeviceManager { state: DeviceManagerState },

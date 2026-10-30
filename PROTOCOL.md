@@ -65,6 +65,47 @@ or
 | `list_addons` | — | Loaded brand addons |
 | `shutdown` | — | Graceful daemon stop |
 
+### Mouse (libratbag / Piper)
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `get_mouse_info` | `device_id` | DPI range + active profile via `ratbagctl` |
+| `set_dpi` | `device_id`, `dpi` | Set DPI and commit to the device |
+
+### Lighting (official backends first, raw HID as fallback)
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `set_color` | `device_id`, `zone`, `color` | Static colour → `official` \| `hid` backend |
+| `set_effect` | `device_id`, `zone`, `effect`, `color?` | Named effect → `official` \| `hid` backend |
+| `prism_sync` | `effect`, `zone`, `color?` | Same effect on every OpenRGB/OpenRazer device |
+
+`effect` ∈ `static | rainbow | breathe | spectrum | wave | off`.
+See [docs/OFFICIAL_DRIVERS.md](docs/OFFICIAL_DRIVERS.md).
+
+### Microphone FX
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `get_mic_fx` | — | Snapshot (`MicFxState`) read via `pactl` |
+| `set_mic_fx` | `state: MicFxState` | Apply gain/mute/high-pass/gate to the default source |
+
+See [docs/MIC_FX.md](docs/MIC_FX.md).
+
+### DSP (live effects)
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `apply_audio_effects` | `effects: AudioEffects` | Rebuild the WirePlumber filter chain now |
+
+### Screen capture
+
+| Command | Params | Description |
+|---------|--------|-------------|
+| `capture_screenshot` | `mode` (`full \| window \| region`), `delay_secs`, `clipboard` | Returns `{ path, backend, message }` |
+
+See [docs/SCREENSHOT.md](docs/SCREENSHOT.md).
+
 ### Example: get_devices
 
 **Request**
@@ -107,16 +148,13 @@ or
 }
 ```
 
-## Tauri commands (UI side)
+## UI side
 
-Exposed from `src-tauri` and callable via `invoke()`:
-
-- `get_devices()`
-- `get_device_status(device_id)`
-- `set_color(device_id, zone, r, g, b)`
-- `ping_daemon()`
-
-These are thin wrappers that speak the Unix-socket protocol above.
+The UI is a Slint binary (`crates/gearcraft-ui`), not Tauri. Its client
+(`crates/gearcraft-ui/src/ipc.rs`) speaks the Unix-socket protocol above with
+blocking `connect → write → read` calls; long-running commands such as
+`capture_screenshot` are dispatched on a worker thread and marshalled back to
+the UI event loop.
 
 ## Macros
 
@@ -125,7 +163,7 @@ These are thin wrappers that speak the Unix-socket protocol above.
 | `list_macros` | — | All macro definitions |
 | `upsert_macro` | `macro_def` | Create/update |
 | `delete_macro` | `macro_id` | Remove |
-| `run_macro` | `macro_id` | Execute (uinput stub logs keys) |
+| `run_macro` | `macro_id` | Execute via uinput (`uinput_macros::play_macro`) |
 
 ```json
 {
@@ -142,7 +180,7 @@ These are thin wrappers that speak the Unix-socket protocol above.
 | Command | Params | Description |
 |---------|--------|-------------|
 | `get_chatmix` | — | `{ balance, game_volume, chat_volume }` |
-| `set_chatmix` | `balance: -100..=100` | Updates volumes; PipeWire apply TBD |
+| `set_chatmix` | `balance: -100..=100` | Updates volumes and applies them through `wpctl` / `pactl` |
 
 ### setup_chatmix
 
@@ -164,6 +202,10 @@ Creates `gearcraft_game` and `gearcraft_chat` null sinks via `pactl` (pipewire-p
 | `delete_preset_rule` | `device_id`, `route_id?` | Remove rule |
 
 See [docs/AUDIO_PRESETS.md](docs/AUDIO_PRESETS.md).
+
+JamesDSP/JDSP4Linux `.conf` imports use `ImportJamesDspPreset { path, apply }`
+and `ImportJamesDspDir { path, apply_first }` — see
+[docs/JAMESDSP_IMPORT.md](docs/JAMESDSP_IMPORT.md).
 
 
 ## Device Manager

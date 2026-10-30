@@ -5,8 +5,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use gearcraft_core::{
-    default_socket_path, AudioPreset, ChannelDevicePolicy, IpcCommand, IpcRequest, IpcResponse,
-    PresetRule, RgbColor,
+    default_socket_path, AudioEffects, AudioPreset, ChannelDevicePolicy, IpcCommand, IpcRequest,
+    IpcResponse, MicFxState, PresetRule, RgbColor,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -136,6 +136,61 @@ pub fn delete_preset_rule(device_id: &str, route_id: &str) -> Result<Value, IpcE
     request(IpcCommand::DeletePresetRule {
         device_id: device_id.to_string(),
         route_id: route_id.to_string(),
+    })
+}
+
+pub fn get_mouse_info(device_id: &str) -> Result<Value, IpcError> {
+    request(IpcCommand::GetMouseInfo {
+        device_id: device_id.to_string(),
+    })
+}
+
+pub fn set_dpi(device_id: &str, dpi: u32) -> Result<Value, IpcError> {
+    request(IpcCommand::SetDpi {
+        device_id: device_id.to_string(),
+        dpi,
+    })
+}
+
+pub fn set_effect(
+    device_id: &str,
+    zone: &str,
+    effect: &str,
+    color: Option<RgbColor>,
+) -> Result<Value, IpcError> {
+    request(IpcCommand::SetEffect {
+        device_id: device_id.to_string(),
+        zone: zone.to_string(),
+        effect: effect.to_string(),
+        color,
+    })
+}
+
+pub fn prism_sync(effect: &str, zone: &str, color: Option<RgbColor>) -> Result<Value, IpcError> {
+    request(IpcCommand::PrismSync {
+        effect: effect.to_string(),
+        zone: zone.to_string(),
+        color,
+    })
+}
+
+pub fn get_mic_fx() -> Result<Value, IpcError> {
+    request(IpcCommand::GetMicFx)
+}
+
+pub fn set_mic_fx(state: MicFxState) -> Result<Value, IpcError> {
+    request(IpcCommand::SetMicFx { state })
+}
+
+pub fn apply_audio_effects(effects: AudioEffects) -> Result<Value, IpcError> {
+    request(IpcCommand::ApplyAudioEffects { effects })
+}
+
+pub fn capture_screenshot(mode: &str, delay_secs: u8, clipboard: bool) -> Result<Value, IpcError> {
+    request(IpcCommand::CaptureScreenshot {
+        mode: mode.to_string(),
+        delay_secs,
+        clipboard,
     })
 }
 

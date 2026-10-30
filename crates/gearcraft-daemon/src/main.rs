@@ -8,8 +8,13 @@ mod audio_presets;
 mod chatmix_pw;
 mod dsp_pw;
 mod config;
+mod drivers;
+mod game_presets;
 mod ipc;
+mod jamesdsp_import;
 mod macros_store;
+mod mic_fx;
+mod screenshot;
 mod uinput_macros;
 mod usb;
 
@@ -75,6 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tokio::spawn(async move {
         app_routing::run_loop(2).await;
+    });
+
+    let presets_gp = Arc::clone(&state.audio_presets);
+    tokio::spawn(async move {
+        game_presets::run_loop(presets_gp, 4).await;
     });
 
     let reg_hp = Arc::clone(&state.registry);

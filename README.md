@@ -51,7 +51,6 @@ Listens on `$XDG_RUNTIME_DIR/gearcraft.sock` (or `/tmp/gearcraft.sock`).
 
 ```bash
 cd crates/gearcraft-ui
-npm install
 cargo run -p gearcraft-ui
 ```
 

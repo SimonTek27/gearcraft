@@ -197,15 +197,11 @@ pub fn conf_to_preset(name: &str, map: &HashMap<String, String>) -> AudioPreset 
 
 pub fn import_file(path: &Path) -> Result<AudioPreset, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let map = parse_conf(&text);
-    if map.is_empty() {
-        return Err("empty or invalid JamesDSP conf".into());
-    }
     let name = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("JamesDSP Import");
-    let preset = conf_to_preset(name, &map);
+    let preset = import_string(name, &text)?;
     info!(
         "imported JamesDSP preset «{}» (eq={} bands, bass={}, xf={})",
         preset.name,
@@ -257,5 +253,18 @@ mod tests {
         assert_eq!(p.effects.eq_bands.len(), 4);
         assert!((p.effects.eq_bands[0].freq_hz - 25.0).abs() < 0.01);
         assert!((p.effects.eq_bands[0].gain_db - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn import_string_parses_conf() {
+        let preset = import_string(
+            "Clear",
+            "tone_enable=true\ntone_eq=25;40;63;100;1.0;2.0;3.0;4.0\nbass_enable=true\nbass_maxgain=6\n",
+        )
+        .expect("import_string");
+        assert_eq!(preset.name, "Clear");
+        assert_eq!(preset.effects.eq_bands.len(), 4);
+        assert!(preset.effects.eq_enabled);
+        assert!(preset.effects.bass_boost);
     }
 }
